@@ -992,7 +992,7 @@ textarea.field-input{height:auto;padding:10px 14px;resize:none;}
     <svg width="52" height="52" viewBox="0 0 24 24" style="margin:10px auto 12px;display:block;"><rect x="1" y="1" width="22" height="22" rx="5" fill="#0a0a0a" stroke="#C9A227" stroke-width="1.2"/><path d="M5.5 6.5h13v3h-5v8h-3v-8H5.5z" fill="#f5f4f1"/><path d="M3.8 16.8l3.8-7" stroke="#C9A227" stroke-width="1.3" stroke-linecap="round"/></svg>
     <p style="font-size:16px;font-weight:800;margin-bottom:4px;">Trivoxa</p>
     <p style="font-size:12.5px;color:var(--c-text2);margin-bottom:16px;">Version 2.0 · Powered by Firebase</p>
-    <p style="font-size:13.5px;color:var(--c-text2);line-height:1.6;text-align:left;">Trivoxa is a private space to share, connect, and message securely. Media you view is cached only on your device — like Instagram and YouTube. Only your account info and posts live on the server.</p>
+    <p style="font-size:13.5px;color:var(--c-text2);line-height:1.6;text-align:left;">Trivoxa is a private space to share, connect, and message securely. All your posts, stories, and profile photos are stored securely on Firebase — fully online, real-time, and visible to everyone.</p>
     <p style="font-size:12px;color:var(--c-text3);margin-top:20px;">© 2025 Trivoxa</p>
   </div></div>
 </div>
@@ -1001,7 +1001,8 @@ textarea.field-input{height:auto;padding:10px 14px;resize:none;}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, limit, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, limit, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+// Firebase Storage not used - using Cloudinary instead
 
 const FC = {
   apiKey:"AIzaSyBmJCHJjW55bNUoS7nzuA3ThgyNbA1bAao",
@@ -1016,6 +1017,53 @@ try{
   const app = initializeApp(FC);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  // Cloudinary upload (free, no Firebase Storage needed)
+  const CLOUD_NAME = "dzzojrwqn";
+  const UPLOAD_PRESET = "trivoxa";
+
+  window.uploadFile = async function(file, folder) {
+    // Compress image before upload
+    const processedFile = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
+    const fd = new FormData();
+    fd.append("file", processedFile);
+    fd.append("upload_preset", UPLOAD_PRESET);
+    fd.append("folder", folder || "trivoxa");
+    const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/auto/upload", {method:"POST", body:fd});
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message);
+    return data.secure_url;
+  };
+
+  window.uploadDataUrl = async function(dataUrl, folder) {
+    const res2 = await fetch(dataUrl);
+    const blob = await res2.blob();
+    const file = new File([blob], "upload.jpg", {type: blob.type || "image/jpeg"});
+    return window.uploadFile(file, folder);
+  };
+
+  // Compress image file before upload
+  async function compressImageFile(file, maxDim, quality) {
+    return new Promise(function(resolve) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          let w = img.width, h = img.height;
+          if(w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else if(h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+          const cv = document.createElement("canvas");
+          cv.width = w; cv.height = h;
+          cv.getContext("2d").drawImage(img, 0, 0, w, h);
+          cv.toBlob(function(blob) {
+            resolve(new File([blob], file.name, {type: "image/jpeg"}));
+          }, "image/jpeg", quality || 0.78);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   window.FB = {
     auth, db,
     createUser: (e,p) => createUserWithEmailAndPassword(auth,e,p),
@@ -1033,6 +1081,7 @@ try{
     docRef: (c,id) => doc(db,c,id),
     query: (...a) => query(...a),
     limit: (n) => limit(n),
+    orderBy: (f,d) => orderBy(f,d),
     onSnapshot: (q,cb,err) => onSnapshot(q,cb,err),
     ts: () => serverTimestamp()
   };
@@ -1070,7 +1119,15 @@ var storiesUnsub = null;
 function ls_load(){
   try{
     var raw = localStorage.getItem("tvx_state");
-    if(raw){ var p=JSON.parse(raw); Object.keys(DEF).forEach(function(k){ if(!(k in p)) p[k]=DEF[k]; }); return p; }
+    if(raw){
+      var p=JSON.parse(raw);
+      Object.keys(DEF).forEach(function(k){ if(!(k in p)) p[k]=DEF[k]; });
+      // Strip old base64 images (they bloat localStorage and are no longer needed)
+      if(p.user&&p.user.avatarImg&&p.user.avatarImg.startsWith("data:")) p.user.avatarImg=null;
+      if(p.posts) delete p.posts; // posts now come from Firestore only
+      if(p.stories) delete p.stories; // stories now come from Firestore only
+      return p;
+    }
   }catch(e){}
   return JSON.parse(JSON.stringify(DEF));
 }
@@ -1152,7 +1209,9 @@ applyTheme();
 function saveUserToFS(){
   if(!window.FB_READY||!window.FB.auth.currentUser) return;
   var uid=window.FB.auth.currentUser.uid;
-  var d={uid:uid,name:S.user.name||"",username:S.user.username||"",bio:S.user.bio||"",color:S.user.color||"#7c3aed",avatarImg:S.user.avatarImg||"",updatedAt:Date.now()};
+  // Only save online URLs (Cloudinary/Firebase), never base64
+  var avatarToSave=S.user.avatarImg&&S.user.avatarImg.startsWith("http")?S.user.avatarImg:"";
+  var d={uid:uid,name:S.user.name||"",username:S.user.username||"",bio:S.user.bio||"",color:S.user.color||"#7c3aed",avatarImg:avatarToSave,updatedAt:Date.now()};
   window.FB.setDoc(window.FB.docRef("users",uid),d,{merge:true}).catch(function(e){ console.warn("User FS save:",e); });
 }
 function loadUserFromFS(uid,cb){
@@ -1176,24 +1235,22 @@ function startListeners(){
   if(!window.FB_READY) return;
 
   if(!postsUnsub){
-    var q=window.FB.query(window.FB.col("posts"),window.FB.limit(80));
+    var q=window.FB.query(window.FB.col("posts"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(80));
     postsUnsub=window.FB.onSnapshot(q,function(snap){
       var docs=[];
       snap.forEach(function(d){ var r=d.data(); r.id=d.id; docs.push(r); });
-      docs.sort(function(a,b){return(b.createdAtMs||0)-(a.createdAtMs||0);});
       livePosts=docs;
       renderFeed();
       renderProfileGrid();
-    },function(e){ console.error("Posts:",e); toast("Could not load posts: "+e.code); });
+    },function(e){ console.error("Posts:",e); toast("Could not load posts: "+(e.code||e.message)); });
   }
 
   if(!storiesUnsub){
-    var sq=window.FB.query(window.FB.col("stories"),window.FB.limit(200));
+    var sq=window.FB.query(window.FB.col("stories"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(200));
     storiesUnsub=window.FB.onSnapshot(sq,function(snap){
       var cutoff=Date.now()-86400000;
       var docs=[];
       snap.forEach(function(d){ var r=d.data(); r.id=d.id; if(!r.createdAtMs||r.createdAtMs>cutoff) docs.push(r); });
-      docs.sort(function(a,b){return(b.createdAtMs||0)-(a.createdAtMs||0);});
       liveStories=docs;
       renderStoriesBar();
     },function(e){ console.error("Stories:",e); });
@@ -1231,7 +1288,7 @@ document.getElementById("li-btn").addEventListener("click",function(){
   var email=document.getElementById("li-email").value.trim();
   var pass=document.getElementById("li-pass").value;
   if(!email||!pass){toast("Enter email and password");return;}
-  if(!window.FB_READY){S.loggedIn=true;ls_save();enterApp();return;}
+  if(!window.FB_READY){toast("Connecting to server... please wait");return;}
   window.FB.signIn(email,pass).then(function(cred){
     S.uid=cred.user.uid; S.user.email=cred.user.email;
     S.loggedIn=true; ls_save();
@@ -1313,11 +1370,10 @@ document.querySelectorAll(".toggle-vis").forEach(function(el){
       showOnboarding();
     }
 
-    if(window.FB_READY){
-      window.FB.createUser(email,pass).then(function(cred){
-        return window.FB.updateProfile(cred.user,{displayName:name}).then(function(){finish(cred.user.uid);});
-      }).catch(function(e){toast(fbErrMsg(e));});
-    } else { finish(null); }
+    if(!window.FB_READY){toast("Connecting to server... please wait");return;}
+    window.FB.createUser(email,pass).then(function(cred){
+      return window.FB.updateProfile(cred.user,{displayName:name}).then(function(){finish(cred.user.uid);});
+    }).catch(function(e){toast(fbErrMsg(e));});
   });
 })();
 
@@ -1358,6 +1414,7 @@ document.getElementById("fp-reset-btn").addEventListener("click",function(){
 /* ── ONBOARDING ─────────────────────────────────────── */
 var obStep=1;
 var obPendingAvatar=null;
+var obPendingAvatarFile=null;
 
 function showOnboarding(){
   obStep=1; obPendingAvatar=null;
@@ -1382,16 +1439,13 @@ function updateObDots(step){
 }
 document.getElementById("ob-avatar-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
-  var r=new FileReader(); r.onload=function(ev){
-    compress(ev.target.result,300,0.85,function(c){
-      obPendingAvatar=c;
-      var p=document.getElementById("ob-avatar-preview");
-      p.style.backgroundImage="url("+c+")";
-      p.style.backgroundSize="cover";
-      p.style.backgroundPosition="center";
-      document.getElementById("ob-avatar-initials").textContent="";
-    });
-  }; r.readAsDataURL(f);
+  obPendingAvatarFile=f;
+  var url=URL.createObjectURL(f);
+  var p=document.getElementById("ob-avatar-preview");
+  p.style.backgroundImage="url("+url+")";
+  p.style.backgroundSize="cover";
+  p.style.backgroundPosition="center";
+  document.getElementById("ob-avatar-initials").textContent="";
 });
 document.getElementById("ob-step1-next").addEventListener("click",function(){
   document.getElementById("ob-step1").classList.add("hidden");
@@ -1422,7 +1476,6 @@ document.getElementById("ob-step2-next").addEventListener("click",function(){
   if(!uname||uname.length<3){toast("Choose a username (at least 3 characters)");return;}
   if(!name){toast("Enter your display name");return;}
   S.user.username=uname; S.user.name=name;
-  if(obPendingAvatar) S.user.avatarImg=obPendingAvatar;
   ls_save();
   document.getElementById("ob-step2").classList.add("hidden");
   document.getElementById("ob-step3").classList.remove("hidden");
@@ -1432,10 +1485,23 @@ document.getElementById("ob-step2-next").addEventListener("click",function(){
 function finishOnboarding(){
   S.user.bio=document.getElementById("ob-bio").value.trim();
   ls_save();
-  saveUserToFS();
   document.getElementById("onboard-wrap").classList.add("hidden");
+  if(obPendingAvatarFile&&window.FB_READY&&window.FB.auth.currentUser){
+    toast("Uploading profile photo...");
+    var uid_=window.FB.auth.currentUser.uid;
+    window.uploadFile(obPendingAvatarFile,"avatars").then(function(url){
+      S.user.avatarImg=url; ls_save(); saveUserToFS(); renderAll();
+      toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+    }).catch(function(e){
+      console.warn("Avatar upload failed:",e);
+      saveUserToFS();
+      toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+    });
+  } else {
+    saveUserToFS();
+    toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+  }
   enterApp();
-  toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
 }
 document.getElementById("ob-finish-btn").addEventListener("click",finishOnboarding);
 document.getElementById("ob-skip3").addEventListener("click",finishOnboarding);
@@ -1487,7 +1553,7 @@ function renderStoriesBar(){
   setAvatar(document.getElementById("my-story-inner"),S.user.avatarImg,S.user.name,S.user.color);
 
   var byUser={};
-  (window.FB_READY?liveStories:S.stories).forEach(function(s){
+  liveStories.forEach(function(s){
     if(!byUser[s.username]) byUser[s.username]=[];
     byUser[s.username].push(s);
   });
@@ -1557,11 +1623,11 @@ document.getElementById("sv-tap-left").addEventListener("click",function(){svIdx
 function renderFeed(){
   var list=document.getElementById("feed-list");
   var loading=document.getElementById("feed-loading");
-  var posts=window.FB_READY?livePosts:S.posts||[];
+  var posts=livePosts;
   if(posts.length===0){
     list.innerHTML="";
-    if(window.FB_READY) loading.textContent="No posts yet — be the first to share!";
-    else loading.textContent="";
+    loading.textContent="No posts yet — be the first to share!";
+    loading.classList.remove("hidden");
     return;
   }
   loading.classList.add("hidden");
@@ -1630,13 +1696,13 @@ function renderFeed(){
 
     list.appendChild(el);
   });
-  document.getElementById("stat-posts").textContent=posts.filter(function(p){return p.username===S.user.username;}).length;
+  document.getElementById("stat-posts").textContent=livePosts.filter(function(p){return p.username===S.user.username;}).length;
 }
 
 /* ── EXPLORE ─────────────────────────────────────────── */
 function renderExploreGrid(){
   var grid=document.getElementById("explore-grid");
-  var posts=window.FB_READY?livePosts:[];
+  var posts=livePosts;
   grid.innerHTML="";
   if(posts.length===0){
     grid.innerHTML='<div style="grid-column:1/-1;padding:30px;text-align:center;color:var(--c-text2);font-size:13.5px;">No posts yet</div>';
@@ -1907,8 +1973,8 @@ function renderNotifications(){
 function renderProfileGrid(){
   var grid=document.getElementById("profile-grid"); grid.innerHTML="";
   var posts=profileTab==="saved"?
-    (window.FB_READY?livePosts:S.posts||[]).filter(function(p){return S.savedPosts.indexOf(p.id)!==-1;}):
-    (window.FB_READY?livePosts:S.posts||[]).filter(function(p){return p.username===S.user.username;});
+    livePosts.filter(function(p){return S.savedPosts.indexOf(p.id)!==-1;}):
+    livePosts.filter(function(p){return p.username===S.user.username;});
   if(!posts.length){
     var msg=profileTab==="saved"?"No saved posts yet":"No posts yet — share something!";
     grid.innerHTML='<div style="grid-column:1/-1;padding:40px 20px;text-align:center;color:var(--c-text2);font-size:13.5px;">'+msg+'</div>';
@@ -1925,7 +1991,7 @@ function renderProfileGrid(){
     }
     grid.appendChild(cell);
   });
-  document.getElementById("stat-posts").textContent=(window.FB_READY?livePosts:S.posts||[]).filter(function(p){return p.username===S.user.username;}).length;
+  document.getElementById("stat-posts").textContent=livePosts.filter(function(p){return p.username===S.user.username;}).length;
 }
 document.querySelectorAll(".profile-tab").forEach(function(t){
   t.addEventListener("click",function(){
@@ -1938,12 +2004,14 @@ document.querySelectorAll(".profile-tab").forEach(function(t){
 
 /* ── CREATE POST/REEL/STORY ──────────────────────────── */
 var pendingMediaB64=null;
+var pendingMediaFile=null;
+var pendingVideoFile=null;
 var pendingVideoUrl=null;
 var currentCreateType="post";
 
 function openCreateModal(type){
   currentCreateType=type||"post";
-  pendingMediaB64=null; pendingVideoUrl=null;
+  pendingMediaB64=null; pendingMediaFile=null; pendingVideoFile=null; pendingVideoUrl=null;
   document.getElementById("create-caption").value="";
   document.getElementById("media-drop").style.backgroundImage="";
   var vp=document.getElementById("media-preview-video"); vp.classList.add("hidden"); vp.src="";
@@ -1972,23 +2040,21 @@ document.getElementById("media-drop").addEventListener("click",function(){docume
 document.getElementById("media-file-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
   if(f.type.startsWith("video/")){
-    pendingMediaB64=null;
+    pendingMediaB64=null; pendingMediaFile=null;
+    pendingVideoFile=f;
     pendingVideoUrl=URL.createObjectURL(f);
     var vp=document.getElementById("media-preview-video"); vp.src=pendingVideoUrl; vp.classList.remove("hidden");
     document.getElementById("media-drop-placeholder").classList.add("hidden");
     document.getElementById("media-drop").style.backgroundImage="";
   } else {
-    pendingVideoUrl=null;
+    pendingVideoUrl=null; pendingVideoFile=null;
+    pendingMediaFile=f;
     document.getElementById("media-preview-video").classList.add("hidden");
-    var r=new FileReader(); r.onload=function(ev){
-      compress(ev.target.result,1200,0.78,function(c){
-        pendingMediaB64=c;
-        document.getElementById("media-drop").style.backgroundImage="url("+c+")";
-        document.getElementById("media-drop").style.backgroundSize="cover";
-        document.getElementById("media-drop").style.backgroundPosition="center";
-        document.getElementById("media-drop-placeholder").classList.add("hidden");
-      });
-    }; r.readAsDataURL(f);
+    var previewUrl=URL.createObjectURL(f);
+    document.getElementById("media-drop").style.backgroundImage="url("+previewUrl+")";
+    document.getElementById("media-drop").style.backgroundSize="cover";
+    document.getElementById("media-drop").style.backgroundPosition="center";
+    document.getElementById("media-drop-placeholder").classList.add("hidden");
   }
 });
 document.getElementById("audio-file-input").addEventListener("change",function(e){
@@ -1999,60 +2065,79 @@ document.getElementById("audio-file-input").addEventListener("change",function(e
 document.getElementById("create-publish-btn").addEventListener("click",function(){
   var caption=document.getElementById("create-caption").value.trim();
   var type=currentCreateType;
-  var uid_=window.FB_READY&&window.FB.auth.currentUser?window.FB.auth.currentUser.uid:"local";
+  if(!window.FB_READY){toast("Firebase not connected. Please wait...");return;}
+  var uid_=window.FB.auth.currentUser?window.FB.auth.currentUser.uid:"anon";
+
+  var btn=document.getElementById("create-publish-btn");
+  btn.disabled=true; btn.textContent="Uploading...";
+
+  function resetBtn(){btn.disabled=false;btn.textContent="Share";}
 
   if(type==="story"||type==="reel"){
-    if(!pendingMediaB64&&!pendingVideoUrl){toast("Add a photo or video first");return;}
-    var storyData={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,avatarImg:S.user.avatarImg||null,img:pendingMediaB64||null,caption:caption,createdAtMs:Date.now()};
-    if(window.FB_READY){
-      storyData.createdAt=window.FB.ts();
-      window.FB.addDoc(window.FB.col("stories"),storyData).then(function(){toast(type==="story"?"Story shared!":"Reel uploaded!");}).catch(function(e){toast("Error: "+e.code);});
-    } else {
-      S.stories.push(storyData); ls_save(); renderStoriesBar();
-      toast(type+" shared (device only — connect Firebase for real sharing)");
-    }
+    if(!pendingMediaFile&&!pendingVideoFile){toast("Add a photo or video first");resetBtn();return;}
+    var file=pendingMediaFile||pendingVideoFile;
+    var folder=type==="story"?"stories":"reels";
+    window.uploadFile(file,folder).then(function(url){
+      var d={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,avatarImg:S.user.avatarImg||null,img:url,caption:caption,createdAtMs:Date.now(),createdAt:window.FB.ts()};
+      return window.FB.addDoc(window.FB.col("stories"),d);
+    }).then(function(){
+      toast(type==="story"?"Story shared! 🎉":"Reel uploaded! 🎉");
+      closeModal("create-modal"); resetBtn();
+    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
   } else {
-    if(!caption){toast("Write a caption — required for posts");return;}
-    var postData={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,img:pendingMediaB64||null,caption:caption,likes:0,createdAtMs:Date.now()};
-    if(window.FB_READY){
-      postData.createdAt=window.FB.ts();
-      window.FB.addDoc(window.FB.col("posts"),postData).then(function(){toast("Post shared! 🎉");}).catch(function(e){toast("Error: "+e.code);});
-    } else {
-      postData.id=uid(); S.posts=S.posts||[]; S.posts.push(postData);
-      ls_save(); renderFeed(); renderProfileGrid();
-      toast("Post saved (device only)");
-    }
+    if(!caption){toast("Write a caption — required for posts");resetBtn();return;}
+    var postData={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,caption:caption,likes:0,createdAtMs:Date.now(),createdAt:window.FB.ts()};
+    var uploadPromise=pendingMediaFile?
+      window.uploadFile(pendingMediaFile,"posts").then(function(url){postData.img=url;}):
+      Promise.resolve();
+    uploadPromise.then(function(){
+      return window.FB.addDoc(window.FB.col("posts"),postData);
+    }).then(function(){
+      toast("Post shared! 🎉");
+      closeModal("create-modal"); resetBtn();
+    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
   }
-  closeModal("create-modal");
 });
 
 /* ── EDIT PROFILE ─────────────────────────────────────── */
 var epPendingAvatar=null;
+var epPendingAvatarFile=null;
 document.getElementById("edit-profile-btn").addEventListener("click",function(){
   document.getElementById("ep-name").value=S.user.name||"";
   document.getElementById("ep-uname").value=S.user.username||"";
   document.getElementById("ep-bio").value=S.user.bio||"";
   epPendingAvatar=S.user.avatarImg;
+  epPendingAvatarFile=null;
   setAvatar(document.getElementById("ep-pic"),S.user.avatarImg,S.user.name,S.user.color);
   document.getElementById("edit-profile-modal").classList.remove("hidden");
 });
 document.getElementById("ep-close").addEventListener("click",function(){closeModal("edit-profile-modal");});
 document.getElementById("ep-avatar-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
-  var r=new FileReader(); r.onload=function(ev){
-    compress(ev.target.result,400,0.85,function(c){
-      epPendingAvatar=c;
-      setAvatar(document.getElementById("ep-pic"),c,S.user.name,S.user.color);
-    });
-  }; r.readAsDataURL(f);
+  epPendingAvatarFile=f;
+  var url=URL.createObjectURL(f);
+  setAvatar(document.getElementById("ep-pic"),url,S.user.name,S.user.color);
 });
 document.getElementById("ep-save-btn").addEventListener("click",function(){
+  var btn=document.getElementById("ep-save-btn");
+  btn.disabled=true; btn.textContent="Saving...";
   S.user.name=document.getElementById("ep-name").value.trim()||S.user.name;
   S.user.username=document.getElementById("ep-uname").value.trim()||S.user.username;
   S.user.bio=document.getElementById("ep-bio").value.trim();
-  S.user.avatarImg=epPendingAvatar;
-  ls_save(); saveUserToFS(); renderAll();
-  closeModal("edit-profile-modal"); toast("Profile updated ✓");
+  function finishSave(){
+    ls_save(); saveUserToFS(); renderAll();
+    closeModal("edit-profile-modal");
+    toast("Profile updated ✓");
+    btn.disabled=false; btn.textContent="Save changes";
+  }
+  if(epPendingAvatarFile&&window.FB_READY&&window.FB.auth.currentUser){
+    var uid_=window.FB.auth.currentUser.uid;
+    window.uploadFile(epPendingAvatarFile,"avatars").then(function(url){
+      S.user.avatarImg=url; finishSave();
+    }).catch(function(e){toast("Photo upload failed: "+(e.code||e.message));btn.disabled=false;btn.textContent="Save changes";});
+  } else {
+    finishSave();
+  }
 });
 
 /* SHARE PROFILE */
@@ -2109,14 +2194,13 @@ function updateCacheDisplay(){
     var raw=localStorage.getItem("tvx_state")||"";
     var kb=new Blob([raw]).size/1024;
     var label=kb<1024?kb.toFixed(1)+" KB":(kb/1024).toFixed(2)+" MB";
-    document.getElementById("s-cache-label").textContent=label+" cached on this device";
+    document.getElementById("s-cache-label").textContent=label+" (local settings only — media is on Firebase)";
     document.getElementById("s-cache-bar").style.width=Math.min(100,(kb/2048)*100)+"%";
   }catch(e){}
 }
 document.getElementById("s-clear-cache").addEventListener("click",function(){
-  (S.posts||[]).forEach(function(p){if(p.username!==S.user.username)p.img=null;});
-  ls_save(); renderFeed(); updateCacheDisplay();
-  toast("Cache cleared — media will reload on next view");
+  ls_save(); updateCacheDisplay();
+  toast("Cache cleared");
 });
 document.getElementById("s-clear-all").addEventListener("click",function(){
   if(!window.confirm("Clear all data? This signs you out and erases everything on this device. It cannot be undone.")) return;
@@ -2135,7 +2219,7 @@ var FAQS=[
   {q:"How do I change my profile photo?",a:"Profile → Edit profile → tap your photo."},
   {q:"How do I save a post?",a:"Tap the bookmark icon below any post. Saved posts appear in your Profile → Saved tab."},
   {q:"Can I post videos?",a:"Yes! When creating a post, reel, or story, you can select either a photo or a video from your device."},
-  {q:"What happens to my data?",a:"Your media is cached on your device, similar to YouTube and Instagram. Only your profile info and posts are sent to the server."}
+  {q:"What happens to my data?",a:"All your data — posts, stories, profile — is stored securely on Firebase servers. Nothing is saved on your device permanently."}
 ];
 document.getElementById("s-help").addEventListener("click",function(){
   var body=document.getElementById("help-body"); body.innerHTML="";
