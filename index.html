@@ -1119,13 +1119,13 @@ try{
     onSnapshot: (q,cb,err) => onSnapshot(q,cb,err),
     ts: () => serverTimestamp()
   };
+  // Store auth reference globally for use in app logic
+  window.FB_AUTH = auth;
   window.FB_READY = true;
 } catch(e){
   console.error("Firebase init failed:", e);
   window.FB_READY = false;
 }
-// Store auth reference globally for use in app logic
-window.FB_AUTH = auth;
 
 window.dispatchEvent(new CustomEvent("fb-ready",{detail:{ok:window.FB_READY}}));
 </script>
