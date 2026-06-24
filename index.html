@@ -1024,16 +1024,24 @@ try{
   const UPLOAD_PRESET = "trivoxa";
 
   window.uploadFile = async function(file, folder) {
-    // Compress image before upload
-    const processedFile = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
-    const fd = new FormData();
-    fd.append("file", processedFile);
-    fd.append("upload_preset", UPLOAD_PRESET);
-    fd.append("folder", folder || "trivoxa");
-    const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/auto/upload", {method:"POST", body:fd});
-    const data = await res.json();
-    if(data.error) throw new Error(data.error.message);
-    return data.secure_url;
+    try {
+      // Compress image before upload (not videos)
+      const processedFile = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
+      const fd = new FormData();
+      fd.append("file", processedFile);
+      fd.append("upload_preset", UPLOAD_PRESET);
+      if(folder) fd.append("folder", "trivoxa/" + folder);
+      const resourceType = file.type.startsWith("video/") ? "video" : "image";
+      const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/" + resourceType + "/upload", {method:"POST", body:fd});
+      if(!res.ok) throw new Error("Upload failed: HTTP " + res.status);
+      const data = await res.json();
+      if(data.error) throw new Error(data.error.message);
+      if(!data.secure_url) throw new Error("No URL returned from Cloudinary");
+      return data.secure_url;
+    } catch(err) {
+      console.error("Cloudinary upload error:", err);
+      throw err;
+    }
   };
 
   window.uploadDataUrl = async function(dataUrl, folder) {
@@ -1116,6 +1124,9 @@ try{
   console.error("Firebase init failed:", e);
   window.FB_READY = false;
 }
+// Store auth reference globally for use in app logic
+window.FB_AUTH = auth;
+
 window.dispatchEvent(new CustomEvent("fb-ready",{detail:{ok:window.FB_READY}}));
 </script>
 
@@ -1258,8 +1269,10 @@ function loadUserFromFS(uid,cb){
 }
 
 /* ── FIRESTORE LISTENERS ────────────────────────────── */
+var listenersStarted = false;
 function startListeners(){
-  if(!window.FB_READY) return;
+  if(!window.FB_READY || listenersStarted) return;
+  listenersStarted = true;
   startChatListListener();
 
   if(!postsUnsub){
@@ -1305,10 +1318,10 @@ function fbErrMsg(err){
 
 function enterApp(){
   document.getElementById("auth-wrap").classList.add("hidden");
+  document.getElementById("onboard-wrap").classList.add("hidden");
   document.getElementById("app").classList.remove("hidden");
   renderAll();
-  window.addEventListener("fb-ready",function(){ startListeners(); },{once:true});
-  if(window.FB_READY) startListeners();
+  startListeners();
 }
 
 /* LOGIN */
@@ -2194,29 +2207,47 @@ document.getElementById("create-publish-btn").addEventListener("click",function(
 
   function resetBtn(){btn.disabled=false;btn.textContent="Share";}
 
+  // Close modal immediately, show uploading toast
+  closeModal("create-modal");
+  resetBtn();
+
   if(type==="story"||type==="reel"){
-    if(!pendingMediaFile&&!pendingVideoFile){toast("Add a photo or video first");resetBtn();return;}
+    if(!pendingMediaFile&&!pendingVideoFile){toast("Add a photo or video first");return;}
     var file=pendingMediaFile||pendingVideoFile;
     var folder=type==="story"?"stories":"reels";
+    toast("Uploading "+type+"...");
     window.uploadFile(file,folder).then(function(url){
-      var d={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,avatarImg:S.user.avatarImg||null,img:url,caption:caption,createdAtMs:Date.now(),createdAt:window.FB.ts()};
+      var d={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,avatarImg:S.user.avatarImg&&S.user.avatarImg.startsWith("http")?S.user.avatarImg:null,img:url,caption:caption,createdAtMs:Date.now(),createdAt:window.FB.ts()};
       return window.FB.addDoc(window.FB.col("stories"),d);
     }).then(function(){
       toast(type==="story"?"Story shared! 🎉":"Reel uploaded! 🎉");
-      closeModal("create-modal"); resetBtn();
-    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
+    }).catch(function(e){
+      console.error("Upload error:",e);
+      toast("Upload failed: "+(e.message||e.code||"unknown error"));
+    });
   } else {
-    if(!caption){toast("Write a caption — required for posts");resetBtn();return;}
+    if(!caption){toast("Caption likhna zaroori hai");return;}
     var postData={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,caption:caption,likes:0,createdAtMs:Date.now(),createdAt:window.FB.ts()};
-    var uploadPromise=pendingMediaFile?
-      window.uploadFile(pendingMediaFile,"posts").then(function(url){postData.img=url;}):
-      Promise.resolve();
-    uploadPromise.then(function(){
-      return window.FB.addDoc(window.FB.col("posts"),postData);
-    }).then(function(){
-      toast("Post shared! 🎉");
-      closeModal("create-modal"); resetBtn();
-    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
+    var doSave=function(imgUrl){
+      if(imgUrl) postData.img=imgUrl;
+      window.FB.addDoc(window.FB.col("posts"),postData).then(function(){
+        toast("Post shared! 🎉");
+      }).catch(function(e){
+        console.error("Firestore error:",e);
+        toast("Post save failed: "+(e.code||e.message));
+      });
+    };
+    if(pendingMediaFile){
+      toast("Uploading image...");
+      window.uploadFile(pendingMediaFile,"posts").then(function(url){
+        doSave(url);
+      }).catch(function(e){
+        console.error("Image upload error:",e);
+        toast("Image upload failed: "+(e.message||e.code));
+      });
+    } else {
+      doSave(null);
+    }
   }
 });
 
@@ -2455,19 +2486,63 @@ window.addEventListener("fb-ready", dismissSplash, {once:true});
 setTimeout(dismissSplash, 2000);
 
 /* ── BOOT ─────────────────────────────────────────────── */
-if(S.loggedIn){
-  document.getElementById("app").classList.remove("hidden");
-  renderAll();
-  window.addEventListener("fb-ready",function(){startListeners();},{once:true});
-  if(window.FB_READY) startListeners();
-  if(S.appLock&&S.appLockPin){
-    pinMode="unlock"; pinBuffer="";
-    document.getElementById("pin-prompt").textContent="Enter your PIN";
-    document.getElementById("pin-screen").classList.remove("hidden");
+function bootApp(){
+  if(!window.FB_READY || !window.FB_AUTH){
+    // Firebase ready nahi hua - login screen dikhaao
+    document.getElementById("auth-wrap").classList.remove("hidden");
+    showAuthScreen("screen-login");
+    return;
   }
+
+  // Import onAuthStateChanged and set up listener
+  import("https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js").then(function(m){
+    m.onAuthStateChanged(window.FB_AUTH, function(user){
+      if(user){
+        // User session hai - data load karo
+        S.uid = user.uid;
+        S.user.email = user.email || S.user.email;
+        S.loggedIn = true;
+        ls_save();
+        loadUserFromFS(user.uid, function(){
+          if(!S.user.username){
+            showOnboarding();
+          } else {
+            document.getElementById("auth-wrap").classList.add("hidden");
+            document.getElementById("onboard-wrap").classList.add("hidden");
+            document.getElementById("app").classList.remove("hidden");
+            renderAll();
+            startListeners();
+            if(S.appLock && S.appLockPin){
+              pinMode="unlock"; pinBuffer="";
+              document.getElementById("pin-prompt").textContent="Enter your PIN";
+              document.getElementById("pin-screen").classList.remove("hidden");
+            }
+          }
+        });
+      } else {
+        // Logged out
+        S.loggedIn = false; ls_save();
+        document.getElementById("app").classList.add("hidden");
+        document.getElementById("onboard-wrap").classList.add("hidden");
+        document.getElementById("auth-wrap").classList.remove("hidden");
+        showAuthScreen("screen-login");
+      }
+    });
+  });
+}
+
+// Firebase ready hone par boot karo
+if(window.FB_READY && window.FB_AUTH){
+  bootApp();
 } else {
-  document.getElementById("auth-wrap").classList.remove("hidden");
-  showAuthScreen("screen-login");
+  window.addEventListener("fb-ready", function(){ bootApp(); }, {once:true});
+  // 4 second timeout fallback
+  setTimeout(function(){
+    if(!S.loggedIn){
+      document.getElementById("auth-wrap").classList.remove("hidden");
+      showAuthScreen("screen-login");
+    }
+  }, 4000);
 }
 
 })();
