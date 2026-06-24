@@ -992,7 +992,7 @@ textarea.field-input{height:auto;padding:10px 14px;resize:none;}
     <svg width="52" height="52" viewBox="0 0 24 24" style="margin:10px auto 12px;display:block;"><rect x="1" y="1" width="22" height="22" rx="5" fill="#0a0a0a" stroke="#C9A227" stroke-width="1.2"/><path d="M5.5 6.5h13v3h-5v8h-3v-8H5.5z" fill="#f5f4f1"/><path d="M3.8 16.8l3.8-7" stroke="#C9A227" stroke-width="1.3" stroke-linecap="round"/></svg>
     <p style="font-size:16px;font-weight:800;margin-bottom:4px;">Trivoxa</p>
     <p style="font-size:12.5px;color:var(--c-text2);margin-bottom:16px;">Version 2.0 · Powered by Firebase</p>
-    <p style="font-size:13.5px;color:var(--c-text2);line-height:1.6;text-align:left;">Trivoxa is a private space to share, connect, and message securely. Media you view is cached only on your device — like Instagram and YouTube. Only your account info and posts live on the server.</p>
+    <p style="font-size:13.5px;color:var(--c-text2);line-height:1.6;text-align:left;">Trivoxa is a private space to share, connect, and message securely. All your posts, stories, and profile photos are stored securely on Firebase — fully online, real-time, and visible to everyone.</p>
     <p style="font-size:12px;color:var(--c-text3);margin-top:20px;">© 2025 Trivoxa</p>
   </div></div>
 </div>
@@ -1001,8 +1001,9 @@ textarea.field-input{height:auto;padding:10px 14px;resize:none;}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, limit, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-storage.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, limit, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+// Firebase Storage not used - using Cloudinary instead
+import { getDatabase, ref as dbRef, set, push, onValue, off, serverTimestamp as rtServerTimestamp, onDisconnect, get } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
 const FC = {
   apiKey:"AIzaSyBmJCHJjW55bNUoS7nzuA3ThgyNbA1bAao",
@@ -1010,17 +1011,87 @@ const FC = {
   projectId:"trivoixa",
   storageBucket:"trivoixa.firebasestorage.app",
   messagingSenderId:"603851786862",
-  appId:"1:603851786862:web:8124fdcda8d74236ff347f"
+  appId:"1:603851786862:web:8124fdcda8d74236ff347f",
+  databaseURL:"https://trivoixa-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
 try{
   const app = initializeApp(FC);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const storage = getStorage(app);
+  // Cloudinary upload (free, no Firebase Storage needed)
+  const CLOUD_NAME = "dzzojrwqn";
+  const UPLOAD_PRESET = "trivoxa";
+
+  window.uploadFile = async function(file, folder) {
+    // Compress image before upload
+    const processedFile = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
+    const fd = new FormData();
+    fd.append("file", processedFile);
+    fd.append("upload_preset", UPLOAD_PRESET);
+    fd.append("folder", folder || "trivoxa");
+    const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/auto/upload", {method:"POST", body:fd});
+    const data = await res.json();
+    if(data.error) throw new Error(data.error.message);
+    return data.secure_url;
+  };
+
+  window.uploadDataUrl = async function(dataUrl, folder) {
+    const res2 = await fetch(dataUrl);
+    const blob = await res2.blob();
+    const file = new File([blob], "upload.jpg", {type: blob.type || "image/jpeg"});
+    return window.uploadFile(file, folder);
+  };
+
+  // Compress image file before upload
+  async function compressImageFile(file, maxDim, quality) {
+    return new Promise(function(resolve) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          let w = img.width, h = img.height;
+          if(w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else if(h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+          const cv = document.createElement("canvas");
+          cv.width = w; cv.height = h;
+          cv.getContext("2d").drawImage(img, 0, 0, w, h);
+          cv.toBlob(function(blob) {
+            resolve(new File([blob], file.name, {type: "image/jpeg"}));
+          }, "image/jpeg", quality || 0.78);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const rtdb = getDatabase(app);
+
+  // Online presence
+  const connRef = dbRef(rtdb, ".info/connected");
+  onValue(connRef, function(snap) {
+    if(snap.val() === true && window.FB && window.FB.auth && window.FB.auth.currentUser) {
+      const uid = window.FB.auth.currentUser.uid;
+      const presRef = dbRef(rtdb, "presence/" + uid);
+      set(presRef, {online: true, lastSeen: Date.now()});
+      onDisconnect(presRef).set({online: false, lastSeen: Date.now()});
+    }
+  });
+
+  window.RTDB = {
+    db: rtdb,
+    ref: (path) => dbRef(rtdb, path),
+    set: (ref, val) => set(ref, val),
+    push: (ref, val) => push(ref, val),
+    get: (ref) => get(ref),
+    onValue: (ref, cb) => onValue(ref, cb),
+    off: (ref) => off(ref),
+    ts: () => Date.now()
+  };
 
   window.FB = {
-    auth, db, storage,
+    auth, db,
     createUser: (e,p) => createUserWithEmailAndPassword(auth,e,p),
     signIn: (e,p) => signInWithEmailAndPassword(auth,e,p),
     googleSignIn: () => signInWithPopup(auth, new GoogleAuthProvider()),
@@ -1036,15 +1107,9 @@ try{
     docRef: (c,id) => doc(db,c,id),
     query: (...a) => query(...a),
     limit: (n) => limit(n),
+    orderBy: (f,d) => orderBy(f,d),
     onSnapshot: (q,cb,err) => onSnapshot(q,cb,err),
-    ts: () => serverTimestamp(),
-    // Storage upload — takes base64 dataURL, returns download URL
-    uploadImage: function(dataUrl, path){
-      var storageRef = ref(storage, path);
-      return uploadString(storageRef, dataUrl, 'data_url').then(function(snap){
-        return getDownloadURL(snap.ref);
-      });
-    }
+    ts: () => serverTimestamp()
   };
   window.FB_READY = true;
 } catch(e){
@@ -1065,7 +1130,7 @@ var DEF = {
   twoFA:false, privateAcc:false, creatorMode:false, verified:false,
   appLock:false, appLockPin:null,
   user:{name:"", username:"", email:"", bio:"", color:"#7c3aed", avatarImg:null},
-  chats:{}, savedPosts:[], stories:[]
+  savedPosts:[]
 };
 
 var S = ls_load();
@@ -1080,7 +1145,15 @@ var storiesUnsub = null;
 function ls_load(){
   try{
     var raw = localStorage.getItem("tvx_state");
-    if(raw){ var p=JSON.parse(raw); Object.keys(DEF).forEach(function(k){ if(!(k in p)) p[k]=DEF[k]; }); return p; }
+    if(raw){
+      var p=JSON.parse(raw);
+      Object.keys(DEF).forEach(function(k){ if(!(k in p)) p[k]=DEF[k]; });
+      // Strip old base64 images (they bloat localStorage and are no longer needed)
+      if(p.user&&p.user.avatarImg&&p.user.avatarImg.startsWith("data:")) p.user.avatarImg=null;
+      if(p.posts) delete p.posts; // posts now come from Firestore only
+      if(p.stories) delete p.stories; // stories now come from Firestore only
+      return p;
+    }
   }catch(e){}
   return JSON.parse(JSON.stringify(DEF));
 }
@@ -1110,32 +1183,6 @@ function compress(dataUrl, maxDim, quality, cb){
   };
   img.onerror=function(){cb(dataUrl);};
   img.src=dataUrl;
-}
-
-// Compress image aggressively until it fits under Firestore 800KB limit
-function compressForFirestore(dataUrl, cb){
-  var maxSizes = [
-    {dim:800, q:0.7},
-    {dim:600, q:0.6},
-    {dim:500, q:0.5},
-    {dim:400, q:0.45},
-    {dim:320, q:0.4}
-  ];
-  var idx = 0;
-  function tryNext(){
-    if(idx >= maxSizes.length){ cb(null); return; } // give up, too large
-    var cfg = maxSizes[idx++];
-    compress(dataUrl, cfg.dim, cfg.q, function(result){
-      // base64 string length * 3/4 = bytes approx
-      var bytes = result.length * 0.75;
-      if(bytes < 800000){
-        cb(result);
-      } else {
-        tryNext();
-      }
-    });
-  }
-  tryNext();
 }
 
 /* ── TOAST ─────────────────────────────────────────── */
@@ -1188,7 +1235,9 @@ applyTheme();
 function saveUserToFS(){
   if(!window.FB_READY||!window.FB.auth.currentUser) return;
   var uid=window.FB.auth.currentUser.uid;
-  var d={uid:uid,name:S.user.name||"",username:S.user.username||"",bio:S.user.bio||"",color:S.user.color||"#7c3aed",avatarImg:S.user.avatarImg||"",updatedAt:Date.now()};
+  // Only save online URLs (Cloudinary/Firebase), never base64
+  var avatarToSave=S.user.avatarImg&&S.user.avatarImg.startsWith("http")?S.user.avatarImg:"";
+  var d={uid:uid,name:S.user.name||"",username:S.user.username||"",bio:S.user.bio||"",color:S.user.color||"#7c3aed",avatarImg:avatarToSave,updatedAt:Date.now()};
   window.FB.setDoc(window.FB.docRef("users",uid),d,{merge:true}).catch(function(e){ console.warn("User FS save:",e); });
 }
 function loadUserFromFS(uid,cb){
@@ -1201,6 +1250,7 @@ function loadUserFromFS(uid,cb){
       if(d.bio!==undefined) S.user.bio=d.bio;
       if(d.avatarImg) S.user.avatarImg=d.avatarImg;
       if(d.color) S.user.color=d.color;
+      if(d.savedPosts&&Array.isArray(d.savedPosts)) S.savedPosts=d.savedPosts;
       ls_save();
     }
     cb&&cb();
@@ -1210,26 +1260,25 @@ function loadUserFromFS(uid,cb){
 /* ── FIRESTORE LISTENERS ────────────────────────────── */
 function startListeners(){
   if(!window.FB_READY) return;
+  startChatListListener();
 
   if(!postsUnsub){
-    var q=window.FB.query(window.FB.col("posts"),window.FB.limit(80));
+    var q=window.FB.query(window.FB.col("posts"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(80));
     postsUnsub=window.FB.onSnapshot(q,function(snap){
       var docs=[];
       snap.forEach(function(d){ var r=d.data(); r.id=d.id; docs.push(r); });
-      docs.sort(function(a,b){return(b.createdAtMs||0)-(a.createdAtMs||0);});
       livePosts=docs;
       renderFeed();
       renderProfileGrid();
-    },function(e){ console.error("Posts:",e); toast("Could not load posts: "+e.code); });
+    },function(e){ console.error("Posts:",e); toast("Could not load posts: "+(e.code||e.message)); });
   }
 
   if(!storiesUnsub){
-    var sq=window.FB.query(window.FB.col("stories"),window.FB.limit(200));
+    var sq=window.FB.query(window.FB.col("stories"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(200));
     storiesUnsub=window.FB.onSnapshot(sq,function(snap){
       var cutoff=Date.now()-86400000;
       var docs=[];
       snap.forEach(function(d){ var r=d.data(); r.id=d.id; if(!r.createdAtMs||r.createdAtMs>cutoff) docs.push(r); });
-      docs.sort(function(a,b){return(b.createdAtMs||0)-(a.createdAtMs||0);});
       liveStories=docs;
       renderStoriesBar();
     },function(e){ console.error("Stories:",e); });
@@ -1267,7 +1316,7 @@ document.getElementById("li-btn").addEventListener("click",function(){
   var email=document.getElementById("li-email").value.trim();
   var pass=document.getElementById("li-pass").value;
   if(!email||!pass){toast("Enter email and password");return;}
-  if(!window.FB_READY){S.loggedIn=true;ls_save();enterApp();return;}
+  if(!window.FB_READY){toast("Connecting to server... please wait");return;}
   window.FB.signIn(email,pass).then(function(cred){
     S.uid=cred.user.uid; S.user.email=cred.user.email;
     S.loggedIn=true; ls_save();
@@ -1349,11 +1398,10 @@ document.querySelectorAll(".toggle-vis").forEach(function(el){
       showOnboarding();
     }
 
-    if(window.FB_READY){
-      window.FB.createUser(email,pass).then(function(cred){
-        return window.FB.updateProfile(cred.user,{displayName:name}).then(function(){finish(cred.user.uid);});
-      }).catch(function(e){toast(fbErrMsg(e));});
-    } else { finish(null); }
+    if(!window.FB_READY){toast("Connecting to server... please wait");return;}
+    window.FB.createUser(email,pass).then(function(cred){
+      return window.FB.updateProfile(cred.user,{displayName:name}).then(function(){finish(cred.user.uid);});
+    }).catch(function(e){toast(fbErrMsg(e));});
   });
 })();
 
@@ -1394,6 +1442,7 @@ document.getElementById("fp-reset-btn").addEventListener("click",function(){
 /* ── ONBOARDING ─────────────────────────────────────── */
 var obStep=1;
 var obPendingAvatar=null;
+var obPendingAvatarFile=null;
 
 function showOnboarding(){
   obStep=1; obPendingAvatar=null;
@@ -1418,16 +1467,13 @@ function updateObDots(step){
 }
 document.getElementById("ob-avatar-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
-  var r=new FileReader(); r.onload=function(ev){
-    compress(ev.target.result,300,0.85,function(c){
-      obPendingAvatar=c;
-      var p=document.getElementById("ob-avatar-preview");
-      p.style.backgroundImage="url("+c+")";
-      p.style.backgroundSize="cover";
-      p.style.backgroundPosition="center";
-      document.getElementById("ob-avatar-initials").textContent="";
-    });
-  }; r.readAsDataURL(f);
+  obPendingAvatarFile=f;
+  var url=URL.createObjectURL(f);
+  var p=document.getElementById("ob-avatar-preview");
+  p.style.backgroundImage="url("+url+")";
+  p.style.backgroundSize="cover";
+  p.style.backgroundPosition="center";
+  document.getElementById("ob-avatar-initials").textContent="";
 });
 document.getElementById("ob-step1-next").addEventListener("click",function(){
   document.getElementById("ob-step1").classList.add("hidden");
@@ -1458,7 +1504,6 @@ document.getElementById("ob-step2-next").addEventListener("click",function(){
   if(!uname||uname.length<3){toast("Choose a username (at least 3 characters)");return;}
   if(!name){toast("Enter your display name");return;}
   S.user.username=uname; S.user.name=name;
-  if(obPendingAvatar) S.user.avatarImg=obPendingAvatar;
   ls_save();
   document.getElementById("ob-step2").classList.add("hidden");
   document.getElementById("ob-step3").classList.remove("hidden");
@@ -1468,10 +1513,23 @@ document.getElementById("ob-step2-next").addEventListener("click",function(){
 function finishOnboarding(){
   S.user.bio=document.getElementById("ob-bio").value.trim();
   ls_save();
-  saveUserToFS();
   document.getElementById("onboard-wrap").classList.add("hidden");
+  if(obPendingAvatarFile&&window.FB_READY&&window.FB.auth.currentUser){
+    toast("Uploading profile photo...");
+    var uid_=window.FB.auth.currentUser.uid;
+    window.uploadFile(obPendingAvatarFile,"avatars").then(function(url){
+      S.user.avatarImg=url; ls_save(); saveUserToFS(); renderAll();
+      toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+    }).catch(function(e){
+      console.warn("Avatar upload failed:",e);
+      saveUserToFS();
+      toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+    });
+  } else {
+    saveUserToFS();
+    toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
+  }
   enterApp();
-  toast("Welcome to Trivoxa, "+S.user.name+"! 🎉");
 }
 document.getElementById("ob-finish-btn").addEventListener("click",finishOnboarding);
 document.getElementById("ob-skip3").addEventListener("click",finishOnboarding);
@@ -1523,7 +1581,7 @@ function renderStoriesBar(){
   setAvatar(document.getElementById("my-story-inner"),S.user.avatarImg,S.user.name,S.user.color);
 
   var byUser={};
-  (window.FB_READY?liveStories:S.stories).forEach(function(s){
+  liveStories.forEach(function(s){
     if(!byUser[s.username]) byUser[s.username]=[];
     byUser[s.username].push(s);
   });
@@ -1593,11 +1651,11 @@ document.getElementById("sv-tap-left").addEventListener("click",function(){svIdx
 function renderFeed(){
   var list=document.getElementById("feed-list");
   var loading=document.getElementById("feed-loading");
-  var posts=window.FB_READY?livePosts:S.posts||[];
+  var posts=livePosts;
   if(posts.length===0){
     list.innerHTML="";
-    if(window.FB_READY) loading.textContent="No posts yet — be the first to share!";
-    else loading.textContent="";
+    loading.textContent="No posts yet — be the first to share!";
+    loading.classList.remove("hidden");
     return;
   }
   loading.classList.add("hidden");
@@ -1633,9 +1691,14 @@ function renderFeed(){
     likeBtn.addEventListener("click",function(){
       liked=!liked;
       this.classList.toggle("liked",liked);
-      likeNum.textContent=((liked?(p.likes||0)+1:(p.likes||0))).toLocaleString();
+      var newLikes=(liked?(p.likes||0)+1:Math.max((p.likes||0)-1,0));
+      likeNum.textContent=newLikes.toLocaleString();
       this.style.transform="scale(1.3)"; var self=this;
       setTimeout(function(){self.style.transform="scale(1)";},150);
+      // Save like to Firestore
+      if(window.FB_READY&&p.id){
+        window.FB.updateDoc(window.FB.docRef("posts",p.id),{likes:newLikes}).catch(function(){});
+      }
     });
 
     var media=el.querySelector(".post-media");
@@ -1656,6 +1719,11 @@ function renderFeed(){
       var nowSaved=idx===-1;
       if(nowSaved) S.savedPosts.push(p.id); else S.savedPosts.splice(idx,1);
       ls_save();
+      // Also sync saved posts to Firestore
+      if(window.FB_READY&&window.FB.auth.currentUser){
+        var uid_=window.FB.auth.currentUser.uid;
+        window.FB.updateDoc(window.FB.docRef("users",uid_),{savedPosts:S.savedPosts}).catch(function(){});
+      }
       this.classList.toggle("saved",nowSaved);
       this.querySelector("svg").setAttribute("fill",nowSaved?"currentColor":"none");
       this.style.transform="scale(1.25)"; var self=this;
@@ -1666,13 +1734,13 @@ function renderFeed(){
 
     list.appendChild(el);
   });
-  document.getElementById("stat-posts").textContent=posts.filter(function(p){return p.username===S.user.username;}).length;
+  document.getElementById("stat-posts").textContent=livePosts.filter(function(p){return p.username===S.user.username;}).length;
 }
 
 /* ── EXPLORE ─────────────────────────────────────────── */
 function renderExploreGrid(){
   var grid=document.getElementById("explore-grid");
-  var posts=window.FB_READY?livePosts:[];
+  var posts=livePosts;
   grid.innerHTML="";
   if(posts.length===0){
     grid.innerHTML='<div style="grid-column:1/-1;padding:30px;text-align:center;color:var(--c-text2);font-size:13.5px;">No posts yet</div>';
@@ -1734,40 +1802,100 @@ document.getElementById("reel-like-btn").addEventListener("click",function(){
 });
 
 /* ── MESSAGES ─────────────────────────────────────────── */
+/* ── REALTIME CHAT (Firebase Realtime Database) ──────── */
+var chatContacts = {}; // {username: {uid, name, color, avatarImg, lastMsg, lastTs, unread}}
+var activeThreadUnsub = null;
+var activeThreadMsgs = [];
+var chatListUnsub = null;
+
+// Get chat room ID (sorted so both users get same room)
+function getChatRoomId(uid1, uid2){
+  return uid1 < uid2 ? uid1+"_"+uid2 : uid2+"_"+uid1;
+}
+
+// Start listening to user's chat list from RTDB
+function startChatListListener(){
+  if(!window.RTDB||!window.FB.auth.currentUser) return;
+  var myUid=window.FB.auth.currentUser.uid;
+  var ref=window.RTDB.ref("userChats/"+myUid);
+  window.RTDB.onValue(ref, function(snap){
+    chatContacts={};
+    var val=snap.val()||{};
+    Object.keys(val).forEach(function(roomId){
+      var c=val[roomId];
+      chatContacts[c.username]=c;
+    });
+    renderChatList();
+  });
+}
+
+// Open chat with a user (by uid + username)
+function openChatWith(targetUid, targetUsername, targetName, targetColor, targetAvatar){
+  activeChatUser=targetUsername;
+  activeChatUid=targetUid;
+  renderChatList();
+  startThreadListener(targetUid, targetUsername, targetName, targetColor, targetAvatar);
+  document.getElementById("chat-thread").classList.add("open");
+}
+
+var activeChatUid=null;
+
+function startThreadListener(targetUid, targetUsername, targetName, targetColor, targetAvatar){
+  if(!window.RTDB||!window.FB.auth.currentUser) return;
+  // Unsubscribe previous
+  if(activeThreadUnsub){ activeThreadUnsub(); activeThreadUnsub=null; }
+  activeThreadMsgs=[];
+  var myUid=window.FB.auth.currentUser.uid;
+  var roomId=getChatRoomId(myUid, targetUid);
+  document.getElementById("thread-name").textContent=targetUsername;
+  setAvatar(document.getElementById("thread-avatar"), targetAvatar||null, targetUsername, targetColor||randomColor(targetUsername));
+  document.getElementById("thread-body").innerHTML='<p style="text-align:center;color:var(--c-text3);font-size:12px;padding:20px;">Loading messages...</p>';
+
+  var ref=window.RTDB.ref("messages/"+roomId);
+  window.RTDB.onValue(ref, function(snap){
+    activeThreadMsgs=[];
+    var val=snap.val()||{};
+    Object.keys(val).forEach(function(k){
+      var m=val[k]; m._key=k; activeThreadMsgs.push(m);
+    });
+    activeThreadMsgs.sort(function(a,b){return (a.ts||0)-(b.ts||0);});
+    renderThread();
+  });
+  activeThreadUnsub=function(){ window.RTDB.off(ref); };
+}
+
 function renderChatList(){
   var list=document.getElementById("chat-rows");
   list.innerHTML="";
-  var contacts=Object.keys(S.chats);
+  var contacts=Object.values(chatContacts);
   if(!contacts.length){
     list.innerHTML='<p style="padding:20px 16px;font-size:13.5px;color:var(--c-text2);">No messages yet. Start a conversation!</p>';
     return;
   }
-  contacts.forEach(function(uname){
-    var msgs=S.chats[uname]||[];
-    var last=msgs[msgs.length-1];
-    if(!last) return;
-    if(activeChatTab==="unread"&&last.from!=="in") return;
-    var unread=last.from==="in";
+  contacts.sort(function(a,b){return (b.lastTs||0)-(a.lastTs||0);});
+  contacts.forEach(function(c){
+    if(activeChatTab==="unread"&&!c.unread) return;
     var row=document.createElement("div");
-    row.className="chat-row"+(uname===activeChatUser?" active":"");
-    row.innerHTML='<div class="chat-row-avatar" style="background:'+randomColor(uname)+';">'+initials(uname)+'</div>'+
-      '<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:5px;"><p class="chat-row-name">'+escHtml(uname)+'</p>'+(unread?'<div class="unread-dot"></div>':'')+'</div><p class="chat-row-preview">'+escHtml(previewMsg(last))+'</p></div>'+
-      '<span class="chat-row-time">now</span>';
+    row.className="chat-row"+(c.username===activeChatUser?" active":"");
+    row.innerHTML='<div class="chat-row-avatar" style="background:'+(c.color||randomColor(c.username||""))+';">'+(c.avatarImg?'':''+initials(c.name||c.username||""))+'</div>'+
+      '<div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:5px;"><p class="chat-row-name">'+escHtml(c.name||c.username||"")+'</p>'+(c.unread?'<div class="unread-dot"></div>':'')+'</div>'+
+      '<p class="chat-row-preview">'+escHtml(c.lastMsg||"")+'</p></div>'+
+      '<span class="chat-row-time">'+timeAgo(c.lastTs)+'</span>';
+    if(c.avatarImg){ var av=row.querySelector(".chat-row-avatar"); av.style.backgroundImage="url("+c.avatarImg+")"; av.style.backgroundSize="cover"; av.style.backgroundPosition="center"; av.textContent=""; }
     row.addEventListener("click",function(){
-      activeChatUser=uname;
-      renderChatList();
-      renderThread();
-      document.getElementById("chat-thread").classList.add("open");
+      openChatWith(c.uid, c.username, c.name, c.color, c.avatarImg);
     });
     list.appendChild(row);
   });
 }
+
 function previewMsg(m){
   if(!m) return "";
   if(m.deleted) return "Message deleted";
   if(m.type==="poll") return "📊 "+m.question;
   return m.text||"";
 }
+
 document.querySelectorAll(".chat-tab").forEach(function(t){
   t.addEventListener("click",function(){
     document.querySelectorAll(".chat-tab").forEach(function(x){x.classList.remove("active");});
@@ -1779,47 +1907,47 @@ document.querySelectorAll(".chat-tab").forEach(function(t){
 
 function renderThread(){
   if(!activeChatUser) return;
-  document.getElementById("thread-name").textContent=activeChatUser;
-  setAvatar(document.getElementById("thread-avatar"),null,activeChatUser,randomColor(activeChatUser));
   var body=document.getElementById("thread-body"); body.innerHTML="";
-  var msgs=S.chats[activeChatUser]||[];
-  msgs.forEach(function(m){
-    if(!m.id) m.id=uid();
+  var myUid=window.FB&&window.FB.auth.currentUser?window.FB.auth.currentUser.uid:"";
+  activeThreadMsgs.forEach(function(m){
+    var isOut=m.senderUid===myUid;
     if(m.type==="poll"){
-      var total=m.options.reduce(function(s,o){return s+(o.votes||0);},0);
-      var wrap=document.createElement("div");
-      wrap.style.cssText="display:flex;flex-direction:column;";
+      var total=m.options?m.options.reduce(function(s,o){return s+(o.votes||0);},0):0;
       var card=document.createElement("div");
-      card.className="poll-card"+(m.from==="in"?" in-poll":"");
-      card.innerHTML='<p class="poll-q">📊 '+escHtml(m.question)+'</p>';
-      m.options.forEach(function(opt,oi){
+      card.className="poll-card"+(isOut?"":" in-poll");
+      card.innerHTML='<p class="poll-q">📊 '+escHtml(m.question||"")+'</p>';
+      (m.options||[]).forEach(function(opt,oi){
         var pct=total>0?Math.round((opt.votes||0)/total*100):0;
-        var picked=m.votedIndex===oi;
         var d=document.createElement("div");
-        d.className="poll-opt"+(picked?" voted":"");
+        d.className="poll-opt"+(m.votedIndex===oi?" voted":"");
         d.innerHTML='<div class="poll-opt-fill" style="width:'+pct+'%;"></div><div class="poll-opt-text"><span>'+escHtml(opt.text)+'</span><span>'+pct+'%</span></div>';
         if(m.votedIndex===null||m.votedIndex===undefined){
-          d.addEventListener("click",function(){
-            m.options[oi].votes=(m.options[oi].votes||0)+1;
-            m.votedIndex=oi;
-            ls_save();
-            renderThread();
-          });
+          (function(idx){
+            d.addEventListener("click",function(){
+              if(!window.RTDB||!activeChatUid||!window.FB.auth.currentUser) return;
+              var myUid2=window.FB.auth.currentUser.uid;
+              var roomId=getChatRoomId(myUid2,activeChatUid);
+              var updates={}; updates["votes"]=((opt.votes||0)+1); updates["votedIndex"]=idx;
+              // update in RTDB
+              var msgRef=window.RTDB.ref("messages/"+roomId+"/"+m._key);
+              var newOpts=JSON.parse(JSON.stringify(m.options));
+              newOpts[idx].votes=(newOpts[idx].votes||0)+1;
+              window.RTDB.set(msgRef, Object.assign({},m,{options:newOpts,votedIndex:idx,_key:undefined}));
+            });
+          })(oi);
         }
         card.appendChild(d);
       });
       card.innerHTML+='<p style="font-size:11px;color:var(--c-text2);margin-top:4px;">'+total+' vote'+(total===1?"":"s")+'</p>';
-      wrap.appendChild(card); body.appendChild(wrap); return;
+      body.appendChild(card); return;
     }
-    var bwrap=document.createElement("div"); bwrap.className="bubble-wrap"; bwrap.style.cssText="display:flex;align-items:center;gap:4px;"+(m.from==="out"?"flex-direction:row-reverse;":"");
-    var b=document.createElement("div"); b.className="bubble "+(m.from==="out"?"out":"in")+(m.deleted?" deleted":"");
-    b.textContent=m.deleted?"Message deleted":m.text;
-    if(m.edited&&!m.deleted){
-      var em=document.createElement("span"); em.className="bubble-meta"; em.textContent="edited";
-      b.appendChild(em);
-    }
+    var bwrap=document.createElement("div"); bwrap.className="bubble-wrap";
+    bwrap.style.cssText="display:flex;align-items:center;gap:4px;"+(isOut?"flex-direction:row-reverse;":"");
+    var b=document.createElement("div"); b.className="bubble "+(isOut?"out":"in")+(m.deleted?" deleted":"");
+    b.textContent=m.deleted?"Message deleted":(m.text||"");
+    if(m.edited&&!m.deleted){ var em=document.createElement("span"); em.className="bubble-meta"; em.textContent="edited"; b.appendChild(em); }
     bwrap.appendChild(b);
-    if(m.from==="out"&&!m.deleted){
+    if(isOut&&!m.deleted&&window.RTDB&&activeChatUid){
       var actions=document.createElement("div"); actions.className="bubble-actions";
       var editBtn=document.createElement("div"); editBtn.className="bubble-action-btn"; editBtn.title="Edit";
       editBtn.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4l11-11-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
@@ -1828,9 +1956,17 @@ function renderThread(){
       (function(msg){
         editBtn.addEventListener("click",function(){
           var t=window.prompt("Edit message:",msg.text);
-          if(t!==null&&t.trim()){msg.text=t.trim();msg.edited=true;ls_save();renderThread();renderChatList();}
+          if(t!==null&&t.trim()){
+            var myUid2=window.FB.auth.currentUser.uid;
+            var roomId=getChatRoomId(myUid2,activeChatUid);
+            window.RTDB.set(window.RTDB.ref("messages/"+roomId+"/"+msg._key), Object.assign({},msg,{text:t.trim(),edited:true,_key:undefined}));
+          }
         });
-        delBtn.addEventListener("click",function(){msg.deleted=true;ls_save();renderThread();renderChatList();});
+        delBtn.addEventListener("click",function(){
+          var myUid2=window.FB.auth.currentUser.uid;
+          var roomId=getChatRoomId(myUid2,activeChatUid);
+          window.RTDB.set(window.RTDB.ref("messages/"+roomId+"/"+msg._key), Object.assign({},msg,{deleted:true,text:"",_key:undefined}));
+        });
       })(m);
       actions.appendChild(editBtn); actions.appendChild(delBtn); bwrap.appendChild(actions);
     }
@@ -1841,59 +1977,69 @@ function renderThread(){
 
 document.getElementById("thread-back").addEventListener("click",function(){
   document.getElementById("chat-thread").classList.remove("open");
+  if(activeThreadUnsub){ activeThreadUnsub(); activeThreadUnsub=null; }
+  activeChatUser=null; activeChatUid=null;
 });
 
 function sendMessage(){
   var inp=document.getElementById("msg-input");
-  var text=inp.value.trim(); if(!text||!activeChatUser) return;
-  if(!S.chats[activeChatUser]) S.chats[activeChatUser]=[];
-  S.chats[activeChatUser].push({id:uid(),from:"out",text:text});
-  inp.value=""; ls_save();
-  renderThread(); renderChatList();
+  var text=inp.value.trim();
+  if(!text||!activeChatUser||!activeChatUid||!window.RTDB||!window.FB.auth.currentUser) return;
+  var myUid=window.FB.auth.currentUser.uid;
+  var roomId=getChatRoomId(myUid, activeChatUid);
+  var msgData={
+    senderUid:myUid,
+    senderUsername:S.user.username||S.user.name,
+    text:text, ts:Date.now(), deleted:false, edited:false
+  };
+  // Push message
+  window.RTDB.push(window.RTDB.ref("messages/"+roomId), msgData);
+  // Update both users' chat list
+  var myContact={uid:activeChatUid, username:activeChatUser, name:chatContacts[activeChatUser]&&chatContacts[activeChatUser].name||activeChatUser, color:chatContacts[activeChatUser]&&chatContacts[activeChatUser].color||randomColor(activeChatUser), avatarImg:chatContacts[activeChatUser]&&chatContacts[activeChatUser].avatarImg||"", lastMsg:text, lastTs:Date.now(), unread:false};
+  window.RTDB.set(window.RTDB.ref("userChats/"+myUid+"/"+roomId), myContact);
+  var theirContact={uid:myUid, username:S.user.username||S.user.name, name:S.user.name||S.user.username, color:S.user.color, avatarImg:S.user.avatarImg&&S.user.avatarImg.startsWith("http")?S.user.avatarImg:"", lastMsg:text, lastTs:Date.now(), unread:true};
+  window.RTDB.set(window.RTDB.ref("userChats/"+activeChatUid+"/"+roomId), theirContact);
+  inp.value="";
 }
 document.getElementById("send-btn").addEventListener("click",sendMessage);
 document.getElementById("msg-input").addEventListener("keydown",function(e){if(e.key==="Enter")sendMessage();});
 
 document.getElementById("new-chat-btn").addEventListener("click",function(){
   var list=document.getElementById("nc-list"); list.innerHTML="";
-  if(window.FB_READY){
-    fetch("https://firestore.googleapis.com/v1/projects/trivoixa/databases/(default)/documents/users?pageSize=50")
-      .then(function(r){return r.json();})
-      .then(function(data){
-        (data.documents||[]).forEach(function(d){
-          var f=d.fields||{};
-          var uname=(f.username&&f.username.stringValue)||"";
-          var name=(f.name&&f.name.stringValue)||"";
-          var color=(f.color&&f.color.stringValue)||randomColor(uname);
-          if(!uname||uname===S.user.username) return;
-          var row=document.createElement("div"); row.className="user-card";
-          row.style.cursor="pointer";
-          row.innerHTML='<div class="user-card-avatar" style="background:'+color+';">'+initials(name||uname)+'</div><div><p class="user-card-name">'+escHtml(name)+'</p><p class="user-card-handle">@'+escHtml(uname)+'</p></div>';
-          row.addEventListener("click",function(){
-            if(!S.chats[uname]) S.chats[uname]=[];
-            activeChatUser=uname;
-            ls_save();
-            closeModal("new-chat-modal");
-            goPanel("messages");
-            renderChatList();
-            renderThread();
-            document.getElementById("chat-thread").classList.add("open");
-          });
-          list.appendChild(row);
-        });
-        if(!list.childElementCount) list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);">No other users found yet</p>';
-      }).catch(function(){list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);">Could not load users</p>';});
-  } else {
-    list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);">Connect Firebase to message real users</p>';
-  }
+  if(!window.FB_READY){list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);">Not connected</p>'; document.getElementById("new-chat-modal").classList.remove("hidden"); return;}
+  list.innerHTML='<p style="font-size:13px;color:var(--c-text2);padding:12px;">Loading users...</p>';
   document.getElementById("new-chat-modal").classList.remove("hidden");
+  // Load users from Firestore
+  fetch("https://firestore.googleapis.com/v1/projects/trivoixa/databases/(default)/documents/users?pageSize=50")
+    .then(function(r){return r.json();})
+    .then(function(data){
+      list.innerHTML="";
+      (data.documents||[]).forEach(function(d){
+        var f=d.fields||{};
+        var uname=(f.username&&f.username.stringValue)||"";
+        var name=(f.name&&f.name.stringValue)||"";
+        var color=(f.color&&f.color.stringValue)||randomColor(uname);
+        var avatar=(f.avatarImg&&f.avatarImg.stringValue)||"";
+        var targetUid=(f.uid&&f.uid.stringValue)||"";
+        if(!uname||uname===S.user.username||!targetUid) return;
+        var row=document.createElement("div"); row.className="user-card"; row.style.cursor="pointer";
+        row.innerHTML='<div class="user-card-avatar" style="background:'+color+';">'+initials(name||uname)+'</div><div><p class="user-card-name">'+escHtml(name)+'</p><p class="user-card-handle">@'+escHtml(uname)+'</p></div>';
+        if(avatar){ var av=row.querySelector(".user-card-avatar"); av.style.backgroundImage="url("+avatar+")"; av.style.backgroundSize="cover"; av.style.backgroundPosition="center"; av.textContent=""; }
+        row.addEventListener("click",function(){
+          closeModal("new-chat-modal");
+          goPanel("messages");
+          openChatWith(targetUid, uname, name, color, avatar);
+        });
+        list.appendChild(row);
+      });
+      if(!list.childElementCount) list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);padding:12px;">No other users found yet</p>';
+    }).catch(function(){list.innerHTML='<p style="font-size:13.5px;color:var(--c-text2);padding:12px;">Could not load users</p>';});
 });
 document.getElementById("nc-close").addEventListener("click",function(){closeModal("new-chat-modal");});
 
-/* POLL */
+/* POLL via RTDB */
 document.getElementById("chat-poll-btn").addEventListener("click",function(){
   if(!activeChatUser){toast("Open a chat first");return;}
-  var pOptCount=2;
   document.getElementById("poll-q").value="";
   ["poll-o1","poll-o2","poll-o3","poll-o4"].forEach(function(id){document.getElementById(id).value="";});
   document.getElementById("poll-o3-wrap").classList.add("hidden");
@@ -1913,11 +2059,16 @@ document.getElementById("poll-send-btn").addEventListener("click",function(){
   var q=document.getElementById("poll-q").value.trim();
   var opts=["poll-o1","poll-o2","poll-o3","poll-o4"].map(function(id){return document.getElementById(id).value.trim();}).filter(Boolean).map(function(t){return{text:t,votes:0};});
   if(!q||opts.length<2){toast("Add a question and at least 2 options");return;}
-  if(!S.chats[activeChatUser]) S.chats[activeChatUser]=[];
-  S.chats[activeChatUser].push({id:uid(),from:"out",type:"poll",question:q,options:opts,votedIndex:null});
-  ls_save();
+  if(!activeChatUid||!window.RTDB||!window.FB.auth.currentUser){toast("Open a chat first");return;}
+  var myUid=window.FB.auth.currentUser.uid;
+  var roomId=getChatRoomId(myUid,activeChatUid);
+  var pollData={senderUid:myUid,senderUsername:S.user.username||S.user.name,type:"poll",question:q,options:opts,votedIndex:null,ts:Date.now()};
+  window.RTDB.push(window.RTDB.ref("messages/"+roomId),pollData);
+  var preview="📊 "+q;
+  window.RTDB.set(window.RTDB.ref("userChats/"+myUid+"/"+roomId),Object.assign({},chatContacts[activeChatUser]||{uid:activeChatUid,username:activeChatUser},{lastMsg:preview,lastTs:Date.now(),unread:false}));
+  window.RTDB.set(window.RTDB.ref("userChats/"+activeChatUid+"/"+roomId),{uid:myUid,username:S.user.username||S.user.name,name:S.user.name,color:S.user.color,avatarImg:S.user.avatarImg&&S.user.avatarImg.startsWith("http")?S.user.avatarImg:"",lastMsg:preview,lastTs:Date.now(),unread:true});
   closeModal("poll-modal");
-  renderThread(); renderChatList();
+  toast("Poll sent!");
 });
 
 /* ── NOTIFICATIONS ───────────────────────────────────── */
@@ -1943,8 +2094,8 @@ function renderNotifications(){
 function renderProfileGrid(){
   var grid=document.getElementById("profile-grid"); grid.innerHTML="";
   var posts=profileTab==="saved"?
-    (window.FB_READY?livePosts:S.posts||[]).filter(function(p){return S.savedPosts.indexOf(p.id)!==-1;}):
-    (window.FB_READY?livePosts:S.posts||[]).filter(function(p){return p.username===S.user.username;});
+    livePosts.filter(function(p){return S.savedPosts.indexOf(p.id)!==-1;}):
+    livePosts.filter(function(p){return p.username===S.user.username;});
   if(!posts.length){
     var msg=profileTab==="saved"?"No saved posts yet":"No posts yet — share something!";
     grid.innerHTML='<div style="grid-column:1/-1;padding:40px 20px;text-align:center;color:var(--c-text2);font-size:13.5px;">'+msg+'</div>';
@@ -1961,7 +2112,7 @@ function renderProfileGrid(){
     }
     grid.appendChild(cell);
   });
-  document.getElementById("stat-posts").textContent=(window.FB_READY?livePosts:S.posts||[]).filter(function(p){return p.username===S.user.username;}).length;
+  document.getElementById("stat-posts").textContent=livePosts.filter(function(p){return p.username===S.user.username;}).length;
 }
 document.querySelectorAll(".profile-tab").forEach(function(t){
   t.addEventListener("click",function(){
@@ -1974,12 +2125,14 @@ document.querySelectorAll(".profile-tab").forEach(function(t){
 
 /* ── CREATE POST/REEL/STORY ──────────────────────────── */
 var pendingMediaB64=null;
+var pendingMediaFile=null;
+var pendingVideoFile=null;
 var pendingVideoUrl=null;
 var currentCreateType="post";
 
 function openCreateModal(type){
   currentCreateType=type||"post";
-  pendingMediaB64=null; pendingVideoUrl=null;
+  pendingMediaB64=null; pendingMediaFile=null; pendingVideoFile=null; pendingVideoUrl=null;
   document.getElementById("create-caption").value="";
   document.getElementById("media-drop").style.backgroundImage="";
   var vp=document.getElementById("media-preview-video"); vp.classList.add("hidden"); vp.src="";
@@ -2008,24 +2161,21 @@ document.getElementById("media-drop").addEventListener("click",function(){docume
 document.getElementById("media-file-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
   if(f.type.startsWith("video/")){
-    pendingMediaB64=null;
+    pendingMediaB64=null; pendingMediaFile=null;
+    pendingVideoFile=f;
     pendingVideoUrl=URL.createObjectURL(f);
     var vp=document.getElementById("media-preview-video"); vp.src=pendingVideoUrl; vp.classList.remove("hidden");
     document.getElementById("media-drop-placeholder").classList.add("hidden");
     document.getElementById("media-drop").style.backgroundImage="";
   } else {
-    pendingVideoUrl=null;
+    pendingVideoUrl=null; pendingVideoFile=null;
+    pendingMediaFile=f;
     document.getElementById("media-preview-video").classList.add("hidden");
-    var r=new FileReader(); r.onload=function(ev){
-      compressForFirestore(ev.target.result, function(c){
-        if(!c){ toast("Image too large — try a smaller photo"); return; }
-        pendingMediaB64=c;
-        document.getElementById("media-drop").style.backgroundImage="url("+c+")";
-        document.getElementById("media-drop").style.backgroundSize="cover";
-        document.getElementById("media-drop").style.backgroundPosition="center";
-        document.getElementById("media-drop-placeholder").classList.add("hidden");
-      });
-    }; r.readAsDataURL(f);
+    var previewUrl=URL.createObjectURL(f);
+    document.getElementById("media-drop").style.backgroundImage="url("+previewUrl+")";
+    document.getElementById("media-drop").style.backgroundSize="cover";
+    document.getElementById("media-drop").style.backgroundPosition="center";
+    document.getElementById("media-drop-placeholder").classList.add("hidden");
   }
 });
 document.getElementById("audio-file-input").addEventListener("change",function(e){
@@ -2036,104 +2186,78 @@ document.getElementById("audio-file-input").addEventListener("change",function(e
 document.getElementById("create-publish-btn").addEventListener("click",function(){
   var caption=document.getElementById("create-caption").value.trim();
   var type=currentCreateType;
-  var uid_=window.FB_READY&&window.FB.auth.currentUser?window.FB.auth.currentUser.uid:"local";
-  var btn=this; btn.disabled=true; btn.textContent="Uploading...";
-  function resetBtn(){ btn.disabled=false; btn.textContent="Share"; }
+  if(!window.FB_READY){toast("Firebase not connected. Please wait...");return;}
+  var uid_=window.FB.auth.currentUser?window.FB.auth.currentUser.uid:"anon";
 
-  if(!window.FB_READY){
-    toast("Firebase not connected — connect internet and try again");
-    resetBtn(); return;
-  }
+  var btn=document.getElementById("create-publish-btn");
+  btn.disabled=true; btn.textContent="Uploading...";
 
-  if((type==="story"||type==="reel") && !pendingMediaB64 && !pendingVideoUrl){
-    toast("Add a photo or video first"); resetBtn(); return;
-  }
-  if(type==="post" && !caption){
-    toast("Write a caption — required for posts"); resetBtn(); return;
-  }
+  function resetBtn(){btn.disabled=false;btn.textContent="Share";}
 
-  function saveDoc(imgData){
-    var data={
-      uid: uid_,
-      username: S.user.username||S.user.name||"user",
-      color: S.user.color||"#7c3aed",
-      avatarImg: S.user.avatarImg||null,
-      caption: caption,
-      img: imgData||null,
-      likes: 0,
-      createdAtMs: Date.now(),
-      createdAt: window.FB.ts()
-    };
-    var col = (type==="story"||type==="reel") ? "stories" : "posts";
-    window.FB.addDoc(window.FB.col(col), data)
-      .then(function(){
-        var msgs={post:"Post shared! 🎉",story:"Story added! 🎉",reel:"Reel uploaded! 🎉"};
-        toast(msgs[type]||"Shared!");
-        closeModal("create-modal");
-        resetBtn();
-      })
-      .catch(function(e){
-        console.error("Firestore save error:", e);
-        toast("Error saving: "+(e.code||e.message||"unknown"));
-        resetBtn();
-      });
-  }
-
-  if(pendingMediaB64){
-    toast("Compressing image...");
-    compressForFirestore(pendingMediaB64, function(compressed){
-      if(!compressed){
-        toast("Image too large even after compression. Try a smaller photo.");
-        resetBtn(); return;
-      }
-      saveDoc(compressed);
-    });
+  if(type==="story"||type==="reel"){
+    if(!pendingMediaFile&&!pendingVideoFile){toast("Add a photo or video first");resetBtn();return;}
+    var file=pendingMediaFile||pendingVideoFile;
+    var folder=type==="story"?"stories":"reels";
+    window.uploadFile(file,folder).then(function(url){
+      var d={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,avatarImg:S.user.avatarImg||null,img:url,caption:caption,createdAtMs:Date.now(),createdAt:window.FB.ts()};
+      return window.FB.addDoc(window.FB.col("stories"),d);
+    }).then(function(){
+      toast(type==="story"?"Story shared! 🎉":"Reel uploaded! 🎉");
+      closeModal("create-modal"); resetBtn();
+    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
   } else {
-    saveDoc(null);
+    if(!caption){toast("Write a caption — required for posts");resetBtn();return;}
+    var postData={uid:uid_,username:S.user.username||S.user.name,color:S.user.color,caption:caption,likes:0,createdAtMs:Date.now(),createdAt:window.FB.ts()};
+    var uploadPromise=pendingMediaFile?
+      window.uploadFile(pendingMediaFile,"posts").then(function(url){postData.img=url;}):
+      Promise.resolve();
+    uploadPromise.then(function(){
+      return window.FB.addDoc(window.FB.col("posts"),postData);
+    }).then(function(){
+      toast("Post shared! 🎉");
+      closeModal("create-modal"); resetBtn();
+    }).catch(function(e){toast("Upload failed: "+(e.code||e.message));resetBtn();});
   }
 });
 
-
 /* ── EDIT PROFILE ─────────────────────────────────────── */
 var epPendingAvatar=null;
+var epPendingAvatarFile=null;
 document.getElementById("edit-profile-btn").addEventListener("click",function(){
   document.getElementById("ep-name").value=S.user.name||"";
   document.getElementById("ep-uname").value=S.user.username||"";
   document.getElementById("ep-bio").value=S.user.bio||"";
   epPendingAvatar=S.user.avatarImg;
+  epPendingAvatarFile=null;
   setAvatar(document.getElementById("ep-pic"),S.user.avatarImg,S.user.name,S.user.color);
   document.getElementById("edit-profile-modal").classList.remove("hidden");
 });
 document.getElementById("ep-close").addEventListener("click",function(){closeModal("edit-profile-modal");});
 document.getElementById("ep-avatar-input").addEventListener("change",function(e){
   var f=e.target.files[0]; if(!f) return;
-  var r=new FileReader(); r.onload=function(ev){
-    compress(ev.target.result,400,0.85,function(c){
-      epPendingAvatar=c;
-      setAvatar(document.getElementById("ep-pic"),c,S.user.name,S.user.color);
-    });
-  }; r.readAsDataURL(f);
+  epPendingAvatarFile=f;
+  var url=URL.createObjectURL(f);
+  setAvatar(document.getElementById("ep-pic"),url,S.user.name,S.user.color);
 });
 document.getElementById("ep-save-btn").addEventListener("click",function(){
-  var btn=this; btn.disabled=true; btn.textContent="Saving...";
+  var btn=document.getElementById("ep-save-btn");
+  btn.disabled=true; btn.textContent="Saving...";
   S.user.name=document.getElementById("ep-name").value.trim()||S.user.name;
   S.user.username=document.getElementById("ep-uname").value.trim()||S.user.username;
   S.user.bio=document.getElementById("ep-bio").value.trim();
-
-  function finishSave(avatarData){
-    if(avatarData) S.user.avatarImg=avatarData;
+  function finishSave(){
     ls_save(); saveUserToFS(); renderAll();
+    closeModal("edit-profile-modal");
+    toast("Profile updated ✓");
     btn.disabled=false; btn.textContent="Save changes";
-    closeModal("edit-profile-modal"); toast("Profile updated ✓");
   }
-
-  if(epPendingAvatar && epPendingAvatar!==S.user.avatarImg){
-    // Compress avatar small enough for Firestore user doc
-    compress(epPendingAvatar, 200, 0.7, function(c){
-      finishSave(c);
-    });
+  if(epPendingAvatarFile&&window.FB_READY&&window.FB.auth.currentUser){
+    var uid_=window.FB.auth.currentUser.uid;
+    window.uploadFile(epPendingAvatarFile,"avatars").then(function(url){
+      S.user.avatarImg=url; finishSave();
+    }).catch(function(e){toast("Photo upload failed: "+(e.code||e.message));btn.disabled=false;btn.textContent="Save changes";});
   } else {
-    finishSave(epPendingAvatar);
+    finishSave();
   }
 });
 
@@ -2191,14 +2315,13 @@ function updateCacheDisplay(){
     var raw=localStorage.getItem("tvx_state")||"";
     var kb=new Blob([raw]).size/1024;
     var label=kb<1024?kb.toFixed(1)+" KB":(kb/1024).toFixed(2)+" MB";
-    document.getElementById("s-cache-label").textContent=label+" cached on this device";
+    document.getElementById("s-cache-label").textContent=label+" (local settings only — media is on Firebase)";
     document.getElementById("s-cache-bar").style.width=Math.min(100,(kb/2048)*100)+"%";
   }catch(e){}
 }
 document.getElementById("s-clear-cache").addEventListener("click",function(){
-  (S.posts||[]).forEach(function(p){if(p.username!==S.user.username)p.img=null;});
-  ls_save(); renderFeed(); updateCacheDisplay();
-  toast("Cache cleared — media will reload on next view");
+  ls_save(); updateCacheDisplay();
+  toast("Cache cleared");
 });
 document.getElementById("s-clear-all").addEventListener("click",function(){
   if(!window.confirm("Clear all data? This signs you out and erases everything on this device. It cannot be undone.")) return;
@@ -2217,7 +2340,7 @@ var FAQS=[
   {q:"How do I change my profile photo?",a:"Profile → Edit profile → tap your photo."},
   {q:"How do I save a post?",a:"Tap the bookmark icon below any post. Saved posts appear in your Profile → Saved tab."},
   {q:"Can I post videos?",a:"Yes! When creating a post, reel, or story, you can select either a photo or a video from your device."},
-  {q:"What happens to my data?",a:"Your media is cached on your device, similar to YouTube and Instagram. Only your profile info and posts are sent to the server."}
+  {q:"What happens to my data?",a:"All your data — posts, stories, profile — is stored securely on Firebase servers. Nothing is saved on your device permanently."}
 ];
 document.getElementById("s-help").addEventListener("click",function(){
   var body=document.getElementById("help-body"); body.innerHTML="";
