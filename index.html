@@ -1119,15 +1119,19 @@ try{
     onSnapshot: (q,cb,err) => onSnapshot(q,cb,err),
     ts: () => serverTimestamp()
   };
-  // Store auth reference globally for use in app logic
+  // Store auth with onAuthStateChanged accessible
   window.FB_AUTH = auth;
+  window.FB_onAuthStateChanged = function(cb){ return auth.onAuthStateChanged(cb); };
   window.FB_READY = true;
 } catch(e){
   console.error("Firebase init failed:", e);
   window.FB_READY = false;
 }
 
-window.dispatchEvent(new CustomEvent("fb-ready",{detail:{ok:window.FB_READY}}));
+// Small delay to ensure window.FB and window.FB_AUTH are accessible
+setTimeout(function(){
+  window.dispatchEvent(new CustomEvent("fb-ready",{detail:{ok:window.FB_READY}}));
+}, 50);
 </script>
 
 <!-- ═══════════════════ APP LOGIC ══════════════════════ -->
@@ -2488,61 +2492,51 @@ setTimeout(dismissSplash, 2000);
 /* ── BOOT ─────────────────────────────────────────────── */
 function bootApp(){
   if(!window.FB_READY || !window.FB_AUTH){
-    // Firebase ready nahi hua - login screen dikhaao
     document.getElementById("auth-wrap").classList.remove("hidden");
     showAuthScreen("screen-login");
     return;
   }
 
-  // Import onAuthStateChanged and set up listener
-  import("https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js").then(function(m){
-    m.onAuthStateChanged(window.FB_AUTH, function(user){
-      if(user){
-        // User session hai - data load karo
-        S.uid = user.uid;
-        S.user.email = user.email || S.user.email;
-        S.loggedIn = true;
-        ls_save();
-        loadUserFromFS(user.uid, function(){
-          if(!S.user.username){
-            showOnboarding();
-          } else {
-            document.getElementById("auth-wrap").classList.add("hidden");
-            document.getElementById("onboard-wrap").classList.add("hidden");
-            document.getElementById("app").classList.remove("hidden");
-            renderAll();
-            startListeners();
-            if(S.appLock && S.appLockPin){
-              pinMode="unlock"; pinBuffer="";
-              document.getElementById("pin-prompt").textContent="Enter your PIN";
-              document.getElementById("pin-screen").classList.remove("hidden");
-            }
+  // onAuthStateChanged - yahi sab kuch handle karta hai
+  // Firebase Auth SDK se onAuthStateChanged call karo
+  window.FB_onAuthStateChanged(function(user){
+    if(user){
+      S.uid = user.uid;
+      S.user.email = user.email || S.user.email;
+      S.loggedIn = true;
+      ls_save();
+      loadUserFromFS(user.uid, function(){
+        if(!S.user.username){
+          showOnboarding();
+        } else {
+          document.getElementById("auth-wrap").classList.add("hidden");
+          document.getElementById("onboard-wrap").classList.add("hidden");
+          document.getElementById("app").classList.remove("hidden");
+          renderAll();
+          startListeners();
+          if(S.appLock && S.appLockPin){
+            pinMode="unlock"; pinBuffer="";
+            document.getElementById("pin-prompt").textContent="Enter your PIN";
+            document.getElementById("pin-screen").classList.remove("hidden");
           }
-        });
-      } else {
-        // Logged out
-        S.loggedIn = false; ls_save();
-        document.getElementById("app").classList.add("hidden");
-        document.getElementById("onboard-wrap").classList.add("hidden");
-        document.getElementById("auth-wrap").classList.remove("hidden");
-        showAuthScreen("screen-login");
-      }
-    });
-  });
-}
-
-// Firebase ready hone par boot karo
-if(window.FB_READY && window.FB_AUTH){
-  bootApp();
-} else {
-  window.addEventListener("fb-ready", function(){ bootApp(); }, {once:true});
-  // 4 second timeout fallback
-  setTimeout(function(){
-    if(!S.loggedIn){
+        }
+      });
+    } else {
+      S.loggedIn = false; ls_save();
+      document.getElementById("app").classList.add("hidden");
+      document.getElementById("onboard-wrap").classList.add("hidden");
       document.getElementById("auth-wrap").classList.remove("hidden");
       showAuthScreen("screen-login");
     }
-  }, 4000);
+  });
+}
+
+// fb-ready event aane par boot karo
+window.addEventListener("fb-ready", function(){ bootApp(); }, {once:true});
+
+// Agar fb-ready already fire ho chuka hai
+if(window.FB_READY && window.FB_AUTH){
+  bootApp();
 }
 
 })();
