@@ -998,12 +998,11 @@ textarea.field-input{height:auto;padding:10px 14px;resize:none;}
 </div>
 
 <!-- ═══════════════════ FIREBASE ═══════════════════════ -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, limit, serverTimestamp, doc, setDoc, getDoc, updateDoc, deleteDoc, orderBy } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-// Firebase Storage not used - using Cloudinary instead
-import { getDatabase, ref as dbRef, set, push, onValue, off, serverTimestamp as rtServerTimestamp, onDisconnect, get } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<script>
 
 const FC = {
   apiKey:"AIzaSyBmJCHJjW55bNUoS7nzuA3ThgyNbA1bAao",
@@ -1015,58 +1014,31 @@ const FC = {
   databaseURL:"https://trivoixa-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
-try{
-  const app = initializeApp(FC);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-  // Cloudinary upload (free, no Firebase Storage needed)
-  const CLOUD_NAME = "dzzojrwqn";
-  const UPLOAD_PRESET = "trivoxa";
+try {
+  firebase.initializeApp(FC);
+  var _auth = firebase.auth();
+  var _db   = firebase.firestore();
+  var _rtdb = firebase.database();
 
-  window.uploadFile = async function(file, folder) {
-    try {
-      // Compress image before upload (not videos)
-      const processedFile = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
-      const fd = new FormData();
-      fd.append("file", processedFile);
-      fd.append("upload_preset", UPLOAD_PRESET);
-      if(folder) fd.append("folder", "trivoxa/" + folder);
-      const resourceType = file.type.startsWith("video/") ? "video" : "image";
-      const res = await fetch("https://api.cloudinary.com/v1_1/" + CLOUD_NAME + "/" + resourceType + "/upload", {method:"POST", body:fd});
-      if(!res.ok) throw new Error("Upload failed: HTTP " + res.status);
-      const data = await res.json();
-      if(data.error) throw new Error(data.error.message);
-      if(!data.secure_url) throw new Error("No URL returned from Cloudinary");
-      return data.secure_url;
-    } catch(err) {
-      console.error("Cloudinary upload error:", err);
-      throw err;
-    }
-  };
+  // ── Cloudinary upload ──────────────────────────────────
+  var CLOUD_NAME    = "dzzojrwqn";
+  var UPLOAD_PRESET = "trivoxa";
 
-  window.uploadDataUrl = async function(dataUrl, folder) {
-    const res2 = await fetch(dataUrl);
-    const blob = await res2.blob();
-    const file = new File([blob], "upload.jpg", {type: blob.type || "image/jpeg"});
-    return window.uploadFile(file, folder);
-  };
-
-  // Compress image file before upload
-  async function compressImageFile(file, maxDim, quality) {
-    return new Promise(function(resolve) {
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-          let w = img.width, h = img.height;
-          if(w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
-          else if(h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
-          const cv = document.createElement("canvas");
+  function compressImageFile(file, maxDim, quality){
+    return new Promise(function(resolve){
+      var reader = new FileReader();
+      reader.onload = function(e){
+        var img = new Image();
+        img.onload = function(){
+          var w = img.width, h = img.height;
+          if(w > h && w > maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
+          else if(h > maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
+          var cv = document.createElement("canvas");
           cv.width = w; cv.height = h;
-          cv.getContext("2d").drawImage(img, 0, 0, w, h);
-          cv.toBlob(function(blob) {
-            resolve(new File([blob], file.name, {type: "image/jpeg"}));
-          }, "image/jpeg", quality || 0.78);
+          cv.getContext("2d").drawImage(img,0,0,w,h);
+          cv.toBlob(function(blob){
+            resolve(new File([blob], file.name||"img.jpg", {type:"image/jpeg"}));
+          }, "image/jpeg", quality||0.78);
         };
         img.src = e.target.result;
       };
@@ -1074,64 +1046,76 @@ try{
     });
   }
 
-  const rtdb = getDatabase(app);
+  window.uploadFile = async function(file, folder){
+    var processed = file.type.startsWith("video/") ? file : await compressImageFile(file, 1080, 0.78);
+    var fd = new FormData();
+    fd.append("file", processed);
+    fd.append("upload_preset", UPLOAD_PRESET);
+    if(folder) fd.append("folder", "trivoxa/"+folder);
+    var resourceType = file.type.startsWith("video/") ? "video" : "image";
+    var res  = await fetch("https://api.cloudinary.com/v1_1/"+CLOUD_NAME+"/"+resourceType+"/upload",{method:"POST",body:fd});
+    var data = await res.json();
+    if(data.error) throw new Error(data.error.message);
+    return data.secure_url;
+  };
 
-  // Online presence
-  const connRef = dbRef(rtdb, ".info/connected");
-  onValue(connRef, function(snap) {
-    if(snap.val() === true && window.FB && window.FB.auth && window.FB.auth.currentUser) {
-      const uid = window.FB.auth.currentUser.uid;
-      const presRef = dbRef(rtdb, "presence/" + uid);
-      set(presRef, {online: true, lastSeen: Date.now()});
-      onDisconnect(presRef).set({online: false, lastSeen: Date.now()});
+  window.uploadDataUrl = async function(dataUrl, folder){
+    var res  = await fetch(dataUrl);
+    var blob = await res.blob();
+    return window.uploadFile(new File([blob],"upload.jpg",{type:blob.type||"image/jpeg"}), folder);
+  };
+
+  // ── Realtime Database wrapper ──────────────────────────
+  window.RTDB = {
+    ref    : function(path){ return _rtdb.ref(path); },
+    set    : function(ref,val){ return ref.set(val); },
+    push   : function(ref,val){ return ref.push(val); },
+    get    : function(ref){ return ref.once("value"); },
+    onValue: function(ref,cb){ ref.on("value",cb); },
+    off    : function(ref){ ref.off(); },
+    ts     : function(){ return Date.now(); }
+  };
+
+  // ── Firestore wrapper ──────────────────────────────────
+  window.FB = {
+    auth : _auth,
+    db   : _db,
+    createUser : function(e,p){ return _auth.createUserWithEmailAndPassword(e,p); },
+    signIn     : function(e,p){ return _auth.signInWithEmailAndPassword(e,p); },
+    googleSignIn: function(){ return _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); },
+    sendReset  : function(e){ return _auth.sendPasswordResetEmail(e); },
+    signOut    : function(){ return _auth.signOut(); },
+    updateProfile: function(u,d){ return u.updateProfile(d); },
+    col        : function(c){ return _db.collection(c); },
+    addDoc     : function(col,d){ return col.add(d); },
+    setDoc     : function(ref,d,opts){ return opts ? ref.set(d,opts) : ref.set(d); },
+    getDoc     : function(ref){ return ref.get(); },
+    updateDoc  : function(ref,d){ return ref.update(d); },
+    deleteDoc  : function(ref){ return ref.delete(); },
+    docRef     : function(c,id){ return _db.collection(c).doc(id); },
+    // query helpers — compat style: just chain on collection ref
+    query      : function(col){ return col; },
+    orderBy    : function(f,d){ return function(q){ return q.orderBy(f,d||"desc"); }; },
+    limit      : function(n){ return function(q){ return q.limit(n); }; },
+    onSnapshot : function(q,cb,errCb){ return q.onSnapshot(cb, errCb||function(e){console.warn(e);}); },
+    ts         : function(){ return firebase.firestore.FieldValue.serverTimestamp(); }
+  };
+
+  // ── Presence ───────────────────────────────────────────
+  _rtdb.ref(".info/connected").on("value", function(snap){
+    if(snap.val() && _auth.currentUser){
+      var pr = _rtdb.ref("presence/"+_auth.currentUser.uid);
+      pr.set({online:true, lastSeen:Date.now()});
+      pr.onDisconnect().set({online:false, lastSeen:Date.now()});
     }
   });
 
-  window.RTDB = {
-    db: rtdb,
-    ref: (path) => dbRef(rtdb, path),
-    set: (ref, val) => set(ref, val),
-    push: (ref, val) => push(ref, val),
-    get: (ref) => get(ref),
-    onValue: (ref, cb) => onValue(ref, cb),
-    off: (ref) => off(ref),
-    ts: () => Date.now()
-  };
-
-  window.FB = {
-    auth, db,
-    createUser: (e,p) => createUserWithEmailAndPassword(auth,e,p),
-    signIn: (e,p) => signInWithEmailAndPassword(auth,e,p),
-    googleSignIn: () => signInWithPopup(auth, new GoogleAuthProvider()),
-    sendReset: (e) => sendPasswordResetEmail(auth,e),
-    signOut: () => signOut(auth),
-    updateProfile: (u,d) => updateProfile(u,d),
-    col: (c) => collection(db,c),
-    addDoc: (c,d) => addDoc(c,d),
-    setDoc: (ref,d,opts) => setDoc(ref,d,opts),
-    getDoc: (ref) => getDoc(ref),
-    updateDoc: (ref,d) => updateDoc(ref,d),
-    deleteDoc: (ref) => deleteDoc(ref),
-    docRef: (c,id) => doc(db,c,id),
-    query: (...a) => query(...a),
-    limit: (n) => limit(n),
-    orderBy: (f,d) => orderBy(f,d),
-    onSnapshot: (q,cb,err) => onSnapshot(q,cb,err),
-    ts: () => serverTimestamp()
-  };
-  // Store auth with onAuthStateChanged accessible
-  window.FB_AUTH = auth;
-  window.FB_onAuthStateChanged = function(cb){ return auth.onAuthStateChanged(cb); };
   window.FB_READY = true;
+
 } catch(e){
-  console.error("Firebase init failed:", e);
+  console.error("Firebase init error:", e);
   window.FB_READY = false;
 }
-
-// Small delay to ensure window.FB and window.FB_AUTH are accessible
-setTimeout(function(){
-  window.dispatchEvent(new CustomEvent("fb-ready",{detail:{ok:window.FB_READY}}));
-}, 50);
 </script>
 
 <!-- ═══════════════════ APP LOGIC ══════════════════════ -->
@@ -1279,26 +1263,32 @@ function startListeners(){
   listenersStarted = true;
   startChatListListener();
 
+  // Posts - compat direct chaining
   if(!postsUnsub){
-    var q=window.FB.query(window.FB.col("posts"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(80));
-    postsUnsub=window.FB.onSnapshot(q,function(snap){
-      var docs=[];
-      snap.forEach(function(d){ var r=d.data(); r.id=d.id; docs.push(r); });
-      livePosts=docs;
-      renderFeed();
-      renderProfileGrid();
-    },function(e){ console.error("Posts:",e); toast("Could not load posts: "+(e.code||e.message)); });
+    postsUnsub = window.FB.col("posts")
+      .orderBy("createdAtMs","desc")
+      .limit(80)
+      .onSnapshot(function(snap){
+        var docs=[];
+        snap.forEach(function(d){ var r=d.data(); r.id=d.id; docs.push(r); });
+        livePosts = docs;
+        renderFeed();
+        renderProfileGrid();
+      }, function(e){ console.error("Posts error:",e); });
   }
 
+  // Stories - compat direct chaining
   if(!storiesUnsub){
-    var sq=window.FB.query(window.FB.col("stories"),window.FB.orderBy("createdAtMs","desc"),window.FB.limit(200));
-    storiesUnsub=window.FB.onSnapshot(sq,function(snap){
-      var cutoff=Date.now()-86400000;
-      var docs=[];
-      snap.forEach(function(d){ var r=d.data(); r.id=d.id; if(!r.createdAtMs||r.createdAtMs>cutoff) docs.push(r); });
-      liveStories=docs;
-      renderStoriesBar();
-    },function(e){ console.error("Stories:",e); });
+    storiesUnsub = window.FB.col("stories")
+      .orderBy("createdAtMs","desc")
+      .limit(200)
+      .onSnapshot(function(snap){
+        var cutoff = Date.now() - 86400000;
+        var docs=[];
+        snap.forEach(function(d){ var r=d.data(); r.id=d.id; if(!r.createdAtMs||r.createdAtMs>cutoff) docs.push(r); });
+        liveStories = docs;
+        renderStoriesBar();
+      }, function(e){ console.error("Stories error:",e); });
   }
 }
 
@@ -2421,8 +2411,10 @@ document.getElementById("s-logout").addEventListener("click",function(){
   document.getElementById("app").classList.add("hidden");
   document.getElementById("auth-wrap").classList.remove("hidden");
   showAuthScreen("screen-login");
-  if(postsUnsub){postsUnsub();postsUnsub=null;}
-  if(storiesUnsub){storiesUnsub();storiesUnsub=null;}
+  if(postsUnsub){try{postsUnsub();}catch(e){} postsUnsub=null;}
+  if(storiesUnsub){try{storiesUnsub();}catch(e){} storiesUnsub=null;}
+  listenersStarted=false;
+  livePosts=[]; liveStories=[];
   livePosts=[]; liveStories=[]; activeChatUser=null;
   toast("Logged out");
 });
@@ -2486,20 +2478,16 @@ function dismissSplash(){
   if(splashDone) return; splashDone=true;
   setTimeout(function(){ document.getElementById("splash").classList.add("hide"); },800);
 }
-window.addEventListener("fb-ready", dismissSplash, {once:true});
-setTimeout(dismissSplash, 2000);
+setTimeout(dismissSplash, 1500);
 
 /* ── BOOT ─────────────────────────────────────────────── */
 function bootApp(){
-  if(!window.FB_READY || !window.FB_AUTH){
+  if(!window.FB_READY || !window.FB || !window.FB.auth){
     document.getElementById("auth-wrap").classList.remove("hidden");
     showAuthScreen("screen-login");
     return;
   }
-
-  // onAuthStateChanged - yahi sab kuch handle karta hai
-  // Firebase Auth SDK se onAuthStateChanged call karo
-  window.FB_onAuthStateChanged(function(user){
+  window.FB.auth.onAuthStateChanged(function(user){
     if(user){
       S.uid = user.uid;
       S.user.email = user.email || S.user.email;
@@ -2531,12 +2519,19 @@ function bootApp(){
   });
 }
 
-// fb-ready event aane par boot karo
-window.addEventListener("fb-ready", function(){ bootApp(); }, {once:true});
-
-// Agar fb-ready already fire ho chuka hai
-if(window.FB_READY && window.FB_AUTH){
+// Compat SDK sync hai - turant boot karo
+if(window.FB_READY && window.FB && window.FB.auth){
   bootApp();
+} else {
+  // fallback - 500ms wait
+  setTimeout(function(){
+    if(window.FB_READY && window.FB && window.FB.auth){
+      bootApp();
+    } else {
+      document.getElementById("auth-wrap").classList.remove("hidden");
+      showAuthScreen("screen-login");
+    }
+  }, 500);
 }
 
 })();
