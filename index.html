@@ -1,286 +1,279 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#4338ca">
 <title>QR Print</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 <style>
-:root{--bg:#f3f6fa;--ink:#10213a;--mut:#5b6b82;--card:#fff;--line:#d9e1ec;--acc:#e8284f;--ok:#0f9d6b}
-*{box-sizing:border-box}body{margin:0;font:16px/1.5 system-ui,"Noto Sans Devanagari",sans-serif;background:var(--bg);color:var(--ink)}
-main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
-h1{font-size:1.5rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 .6em}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
-button,.btn{font:inherit;border:0;border-radius:10px;padding:10px 16px;background:var(--ink);color:#fff;cursor:pointer}
-button.acc{background:var(--acc)}button.ok{background:var(--ok)}button.ghost{background:#e8eef6;color:var(--ink)}
-button:disabled{opacity:.5}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #7aa7ff;outline-offset:2px}
-input,select{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:10px;width:100%;margin:4px 0 10px}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.row>*{flex:1}
-.file{display:grid;grid-template-columns:84px 1fr;gap:12px;border-top:1px solid var(--line);padding:12px 0}
-.file:first-of-type{border-top:0}.thumb{width:84px;height:84px;object-fit:cover;border-radius:8px;background:#e8eef6;display:grid;place-items:center;font-weight:700;color:var(--mut)}
-.seg{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.seg button{padding:6px 10px;font-size:.9rem;background:#e8eef6;color:var(--ink)}.seg button.on{background:var(--acc);color:#fff}
-.tag{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.8rem;background:#e8eef6}.tag.pending{background:#fff0c9}.tag.approved{background:#d4f3e6}.tag.printed{background:#dfe6f2}
-.mut{color:var(--mut);font-size:.9rem}.hide{display:none!important}
-#modal{position:fixed;inset:0;background:#000d;z-index:9;display:flex;flex-direction:column;padding:12px}
-#modal .box{flex:1;min-height:0}#modal img{max-width:100%;display:block}
-#qr{padding:10px;background:#fff;display:inline-block;border-radius:8px}
-#demo{background:#fff0c9;padding:8px 16px;text-align:center;font-size:.9rem}
-@media print{body *{display:none}}
+:root{--bg:#f4f5fb;--card:#fff;--ink:#12142b;--mut:#6b7090;--line:#e4e6f2;--acc:#4f46e5;--acc2:#7c3aed;--ok:#059669;--bad:#dc2626;--chip:#eef0fb}
+@media(prefers-color-scheme:dark){:root{--bg:#0d0f1f;--card:#171a31;--ink:#eef0ff;--mut:#9aa0c7;--line:#2a2e50;--chip:#22264a}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+[hidden]{display:none!important}
+main{max-width:720px;margin:0 auto;padding:16px 16px 120px}
+h2{font-size:1.05rem;margin:0 0 6px}
+.mut{color:var(--mut);font-size:.9rem}
+.hero{background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;padding:calc(env(safe-area-inset-top) + 28px) 20px 56px;text-align:center}
+.hero h1{margin:10px 0 4px;font-size:1.5rem}.hero p{margin:0;opacity:.9}
+.hero svg{width:44px;height:44px}
+.pull{margin-top:-34px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 6px 24px -14px rgba(30,30,90,.35)}
+.drop{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center;padding:26px 16px;border:2px dashed #b9bdf0;border-radius:18px;background:var(--card);cursor:pointer}
+.drop svg{width:38px;height:38px;color:var(--acc)}.drop b{font-size:1.05rem}
+.drop input{position:absolute;opacity:0;width:0;height:0}
+.btn{font:inherit;font-weight:600;border:0;border-radius:12px;padding:12px 18px;background:var(--acc);color:#fff;cursor:pointer}
+.btn.ghost{background:var(--chip);color:var(--ink)}.btn.ok{background:var(--ok)}.btn.bad{background:transparent;color:var(--bad)}
+.btn.sm{padding:8px 12px;font-size:.88rem;border-radius:10px}.btn:disabled{opacity:.55}
+.btn:focus-visible,input:focus-visible{outline:3px solid #8b93ff;outline-offset:2px}
+input[type=text],input:not([type]){font:inherit;width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);margin:4px 0 8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.file{display:grid;grid-template-columns:92px 1fr;gap:14px}
+.file+.file{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
+.thumb{width:92px;height:116px;border-radius:10px;object-fit:cover;background:var(--chip);display:grid;place-items:center;font-weight:700;color:var(--mut)}
+.fname{font-weight:600;word-break:break-all;font-size:.95rem}
+.seg{display:inline-flex;background:var(--chip);border-radius:10px;padding:3px;margin:6px 6px 0 0}
+.seg button{font:inherit;font-size:.85rem;border:0;background:none;color:var(--ink);padding:6px 10px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--acc);color:#fff}
+.step{display:inline-flex;align-items:center;gap:2px;background:var(--chip);border-radius:10px;margin:6px 6px 0 0}
+.step button{border:0;background:none;color:var(--ink);font-size:1.2rem;width:34px;height:34px;cursor:pointer}.step b{min-width:26px;text-align:center}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));z-index:5}
+.bar .in{max-width:720px;margin:0 auto}.bar .btn{width:100%;font-size:1.05rem;position:relative;overflow:hidden}
+#prog{position:absolute;left:0;top:0;bottom:0;width:0;background:#ffffff40;transition:width .2s}
+.done{text-align:center;padding:36px 12px}.done svg{width:64px;height:64px;color:var(--ok)}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:4}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700}.brand svg{width:26px;height:26px;color:var(--acc)}
+.st{display:flex;align-items:center;gap:6px;font-size:.88rem;color:var(--mut)}.st i{width:10px;height:10px;border-radius:50%;background:#f59e0b}.st.on i{background:var(--ok)}
+.qrrow{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}
+@media(max-width:560px){.qrrow{grid-template-columns:1fr;justify-items:center}.qinfo{width:100%}}
+.qrbox{background:#fff;padding:10px;border-radius:12px;border:1px solid var(--line)}
+.head{display:flex;justify-content:space-between;align-items:baseline;margin-top:24px}
+.job{display:grid;grid-template-columns:72px 1fr;gap:14px}.job .thumb{width:72px;height:92px}
+.chip{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.78rem;font-weight:600;background:var(--chip)}
+.chip.pending{background:#fff1c9;color:#7a5200}.chip.approved{background:#d7f5e8;color:#06623f}.chip.printed{opacity:.7}
+.job.printed{opacity:.65}.empty{text-align:center;color:var(--mut);padding:30px 10px}
+.note{color:var(--mut);font-size:.85rem;margin-top:22px}
+#toast{position:fixed;left:50%;bottom:90px;transform:translate(-50%,20px);background:#12142b;color:#fff;padding:10px 16px;border-radius:12px;opacity:0;pointer-events:none;transition:.25s;z-index:20;max-width:90%}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#modal{position:fixed;inset:0;background:#000e;z-index:30;display:flex;flex-direction:column;padding:12px}
+#modal .mbox{flex:1;min-height:0}#modal img{max-width:100%;display:block}
+.mbar{display:flex;gap:10px;padding-top:10px}.mbar .btn{flex:1}
 </style>
 </head>
 <body>
-<div id="demo" class="hide">Connect ho raha hai…</div>
-<main id="app"></main>
-<div id="modal" class="hide"><div class="box"><img id="cropimg"></div>
-<div class="row" style="margin-top:10px"><button class="ghost" id="cx">Cancel</button><button class="acc" id="cok">Crop karo</button></div></div>
-
-<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<div id="app"></div><div id="toast" role="status"></div>
+<div id="modal" hidden><div class="mbox"><img id="cropimg" alt=""></div><div class="mbar"><button class="btn ghost" id="cx">Cancel</button><button class="btn" id="cok">Apply crop</button></div></div>
 <script>
-// ====== Kuch bharne ki zaroorat nahi. (Optional: Supabase use karna ho to yahan details daalo) ======
-const SUPABASE_URL = "";
-const SUPABASE_ANON_KEY = "";
-// =========================================================================================
-
-const $ = (s, r = document) => r.querySelector(s);
-const app = $("#app");
-const LIVE = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
-const sb = LIVE ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-const banner = t => { const b = $("#demo"); b.textContent = t; b.classList.remove("hide"); };
-const uid = () => crypto.randomUUID();
+const NTFY = "https://ntfy.sh";
+const $ = (s, r = document) => r.querySelector(s), app = $("#app");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-
-/* ---------- Backend (Supabase ya demo-localStorage) ---------- */
-const toDataURL = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
-const api = {
-  async upload(shop, blob, meta) {
-    const id = uid(), ext = (meta.type.split("/")[1] || "bin").replace("jpeg", "jpg");
-    if (LIVE) {
-      const path = `${shop}/${id}.${ext}`;
-      let r = await sb.storage.from("docs").upload(path, blob, { contentType: meta.type });
-      if (r.error) throw r.error;
-      r = await sb.from("jobs").insert({ id, shop_id: shop, path, ...meta });
-      if (r.error) throw r.error;
-    } else { // P2P: seedha dukaan ke dashboard ko
-      const conn = await connectTo(shop), data = await blob.arrayBuffer();
-      await new Promise((res, rej) => {
-        const t = setTimeout(() => rej(new Error("Dukaan se confirmation nahi aaya, dobara try karo")), 40000);
-        const h = d => { if (d && d.ack) { clearTimeout(t); conn.off("data", h); res(); } };
-        conn.on("data", h); conn.send({ meta, data });
-      });
-    }
-  },
-  async list(shop) {
-    if (LIVE) {
-      const { data } = await sb.from("jobs").select("*").eq("shop_id", shop).neq("status", "rejected").order("created_at", { ascending: false }).limit(50);
-      return data || [];
-    }
-    return memJobs.filter(j => j.status !== "rejected");
-  },
-  async setStatus(j, status) {
-    if (LIVE) await sb.from("jobs").update({ status }).eq("id", j.id); else j.status = status;
-  },
-  async blobOf(j) {
-    if (LIVE) { const { data, error } = await sb.storage.from("docs").download(j.path); if (error) throw error; return data; }
-    return j.blob;
-  },
-  async wipe(j) { // print ke baad file delete (privacy)
-    if (LIVE) { await sb.storage.from("docs").remove([j.path]); await sb.from("jobs").update({ path: null, status: "printed" }).eq("id", j.id); }
-    else { j.blob = null; j.status = "printed"; }
-  },
-  watch(shop, cb) {
-    if (LIVE) sb.channel("jobs-" + shop).on("postgres_changes", { event: "*", schema: "public", table: "jobs", filter: `shop_id=eq.${shop}` }, cb).subscribe();
-    else onJobs = cb;
-  }
-};
-
-/* ---------- P2P (bina account/server): customer phone -> dukaan ka browser ---------- */
-let memJobs = [], onJobs = () => {}, owner, cust;
-function startOwner(id) {
-  owner = new Peer(id);
-  owner.on("open", () => banner("✅ Online — customer file bhej sakte hain. Ye page khula rakho."));
-  owner.on("connection", c => c.on("data", d => {
-    if (!d || !d.meta) return;
-    const job = { id: uid(), shop_id: id, blob: new Blob([d.data], { type: d.meta.type }), status: "pending", created_at: new Date().toISOString(), ...d.meta };
-    memJobs.unshift(job); c.send({ ack: job.id }); onJobs();
-  }));
-  owner.on("disconnected", () => { banner("Internet gaya, wapas jud rahe hain…"); owner.reconnect(); });
-  owner.on("error", e => {
-    if (e.type === "unavailable-id") { banner("Connect ho raha hai… (agar ye page doosre tab me khula hai to use band karo)"); owner.destroy(); setTimeout(() => startOwner(id), 5000); }
-    else banner("⚠ Connection dikkat: " + e.type);
-  });
-}
-function connectTo(shop) {
-  if (cust && cust.shop === shop && cust.conn.open) return Promise.resolve(cust.conn);
-  return new Promise((res, rej) => {
-    const t = setTimeout(() => rej(new Error("Dukaan se connect nahi hua. Dukaan wale se kaho dashboard khula rakhe, aur apna net check karo.")), 25000);
-    const p = new Peer();
-    p.on("error", e => { clearTimeout(t); rej(new Error(e.type === "peer-unavailable" ? "Dukaan ka dashboard abhi online nahi hai." : "Connection error: " + e.type)); });
-    p.on("open", () => { const c = p.connect(shop, { reliable: true }); c.on("open", () => { clearTimeout(t); cust = { shop, conn: c }; res(c); }); });
-  });
-}
-
-/* ---------- Image tools: crop + AI-style enhance (free, browser me) ---------- */
-function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
-function toCanvas(img, max = 2200) {
+const rand = n => Array.from(crypto.getRandomValues(new Uint8Array(n)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></svg>';
+function toast(t) { const e = $("#toast"); e.textContent = t; e.classList.add("show"); clearTimeout(toast.t); toast.t = setTimeout(() => e.classList.remove("show"), 3500); }
+const lazy = (src, css) => new Promise((ok, no) => { if (css) { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = css; document.head.append(l); } const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.append(s); });
+const loadImg = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+const toBlob = (c, q = .88) => new Promise(r => c.toBlob(r, "image/jpeg", q));
+function toCanvas(img, max) {
   const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement("canvas");
-  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); return c;
+  c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+  const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height); return c;
 }
-function levels(d, gray) { // auto contrast: 1%-99% stretch
+
+/* ---------- Image enhancement (runs on the customer's phone) ---------- */
+function levels(d, gray) {
   const h = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)], n = d.length / 4;
   for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) h[c][d[i + c]]++;
   const rng = h.map(x => { let a = 0, lo = 0, hi = 255; while (lo < 255 && (a += x[lo]) < n * .01) lo++; a = 0; while (hi > 0 && (a += x[hi]) < n * .01) hi--; return [lo, Math.max(hi, lo + 1)]; });
   const avg = [Math.min(...rng.map(r => r[0])), Math.max(...rng.map(r => r[1]))];
-  for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) {
-    const [lo, hi] = gray ? avg : rng[c]; d[i + c] = Math.max(0, Math.min(255, (d[i + c] - lo) * 255 / (hi - lo)));
-  }
+  for (let i = 0; i < d.length; i += 4) for (let c = 0; c < 3; c++) { const [lo, hi] = gray ? avg : rng[c]; d[i + c] = Math.max(0, Math.min(255, (d[i + c] - lo) * 255 / (hi - lo))); }
 }
-function sharpen(ctx, w, h, amt = .6) {
-  const src = ctx.getImageData(0, 0, w, h), out = ctx.createImageData(w, h), s = src.data, o = out.data;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = (y * w + x) * 4;
-    for (let c = 0; c < 3; c++) {
-      const v = (x > 0 && y > 0 && x < w - 1 && y < h - 1)
-        ? s[i + c] * (1 + 4 * amt) - amt * (s[i - 4 + c] + s[i + 4 + c] + s[i - w * 4 + c] + s[i + w * 4 + c]) : s[i + c];
-      o[i + c] = Math.max(0, Math.min(255, v));
-    } o[i + 3] = 255;
+function sharpen(x, w, h, a = .6) {
+  const src = x.getImageData(0, 0, w, h), out = x.createImageData(w, h), s = src.data, o = out.data;
+  for (let y = 0; y < h; y++) for (let i = y * w * 4, e = i + w * 4, px = 0; i < e; i += 4, px++) {
+    const edge = px === 0 || y === 0 || px === w - 1 || y === h - 1;
+    for (let c = 0; c < 3; c++) { const v = edge ? s[i + c] : s[i + c] * (1 + 4 * a) - a * (s[i - 4 + c] + s[i + 4 + c] + s[i - w * 4 + c] + s[i + w * 4 + c]); o[i + c] = v < 0 ? 0 : v > 255 ? 255 : v; }
+    o[i + 3] = 255;
   }
-  ctx.putImageData(out, 0, 0);
+  x.putImageData(out, 0, 0);
 }
-async function enhance(blob, mode) { // mode: orig | auto | scan
-  if (mode === "orig") return blob;
-  const c = toCanvas(await loadImg(URL.createObjectURL(blob))), x = c.getContext("2d"), im = x.getImageData(0, 0, c.width, c.height);
+function enhanceCanvas(c, mode) {
+  if (mode === "orig") return c;
+  const x = c.getContext("2d"), im = x.getImageData(0, 0, c.width, c.height), d = im.data;
   if (mode === "scan") {
-    for (let i = 0; i < im.data.length; i += 4) { const g = .3 * im.data[i] + .59 * im.data[i + 1] + .11 * im.data[i + 2]; im.data[i] = im.data[i + 1] = im.data[i + 2] = g; }
-    levels(im.data, true);
-    for (let i = 0; i < im.data.length; i += 4) { const v = im.data[i] / 255, s = 255 / (1 + Math.exp(-10 * (v - .55))); im.data[i] = im.data[i + 1] = im.data[i + 2] = s; }
+    for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = .3 * d[i] + .59 * d[i + 1] + .11 * d[i + 2];
+    levels(d, true);
+    for (let i = 0; i < d.length; i += 4) d[i] = d[i + 1] = d[i + 2] = 255 / (1 + Math.exp(-10 * (d[i] / 255 - .55)));
     x.putImageData(im, 0, 0);
-  } else { levels(im.data, false); x.putImageData(im, 0, 0); sharpen(x, c.width, c.height); }
-  return new Promise(r => c.toBlob(r, "image/jpeg", .92));
-}
-let cropper;
-function cropDialog(blob) {
-  return new Promise(res => {
-    const m = $("#modal"), im = $("#cropimg"); im.src = URL.createObjectURL(blob); m.classList.remove("hide");
-    cropper = new Cropper(im, { viewMode: 1, autoCropArea: .95, background: false });
-    const done = v => { cropper.destroy(); m.classList.add("hide"); res(v); };
-    $("#cx").onclick = () => done(null);
-    $("#cok").onclick = () => cropper.getCroppedCanvas({ maxWidth: 2600, maxHeight: 2600 }).toBlob(b => done(b), "image/jpeg", .95);
-  });
+  } else { levels(d, false); x.putImageData(im, 0, 0); sharpen(x, c.width, c.height); }
+  return c;
 }
 
-/* ---------- Customer page: QR scan -> upload ---------- */
-const files = []; // {orig, blob, mode, name, type, copies, color}
-function customer(shop) {
-  app.innerHTML = `<h1>Document print karo</h1><p class="mut">File chuno, crop/enhance karo, bhejo. Dukaan wala approve karke print karega.</p>
-  <div class="card"><input id="pick" type="file" accept="image/*,application/pdf" multiple>
-  <div id="list"></div></div>
-  <div class="card hide" id="send"><label>Aapka naam / mobile (counter par pehchan ke liye)<input id="who" placeholder="Rahul - 98xxxxxx"></label>
-  <button class="acc" id="go" style="width:100%">Dukaan ko bhejo</button><p class="mut" id="msg"></p></div>`;
+/* ================= CUSTOMER ================= */
+const params = new URLSearchParams(location.search), topic = params.get("s");
+const files = [];
+function customerView() {
+  const shop = params.get("n") || "the shop";
+  app.innerHTML = `<header class="hero">${ICON}<h1>Print at ${esc(shop)}</h1><p>Add your files, then collect the prints at the counter.</p></header>
+  <main class="pull"><label class="drop"><input id="pick" type="file" accept="image/*,application/pdf,.heic,.heif" multiple>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+  <b>Add photos or PDF</b><span class="mut">Photos are converted to JPG automatically</span></label>
+  <div class="card" id="listcard" hidden><div id="list"></div></div>
+  <div class="card" id="whocard" hidden><label>Your name or phone number<input id="who" type="text" placeholder="So the shop can find your order" autocomplete="name"></label></div></main>
+  <div class="bar" id="bar" hidden><div class="in"><button class="btn" id="send"><span id="prog"></span><span id="sendt">Send to shop</span></button></div></div>`;
   $("#pick").onchange = async e => {
-    for (const f of e.target.files) files.push({ orig: f, blob: f, mode: "orig", name: f.name, type: f.type, copies: 1, color: false });
-    e.target.value = ""; draw();
-  };
-  $("#go").onclick = async () => {
-    const b = $("#go"); b.disabled = true; $("#msg").textContent = "Bhej rahe hain…";
-    try {
-      for (const f of files) {
-        const out = f.type.startsWith("image/") ? await enhance(f.blob, f.mode) : f.blob;
-        await api.upload(shop, out, { name: ($("#who").value ? $("#who").value + " · " : "") + f.name, type: out.type || f.type, copies: f.copies, color: f.color });
-      }
-      files.length = 0; app.innerHTML = `<div class="card"><h2>✅ Bhej diya</h2><p>Ab dukaan par jaake batao. Owner approve karte hi print ho jayega.</p><button onclick="location.reload()">Aur file bhejo</button></div>`;
-    } catch (err) { $("#msg").textContent = "Error: " + (err.message || err); b.disabled = false; }
-  };
-}
-async function draw() {
-  const L = $("#list"); L.innerHTML = "";
-  $("#send").classList.toggle("hide", !files.length);
-  files.forEach((f, i) => {
-    const img = f.type.startsWith("image/"), d = document.createElement("div"); d.className = "file";
-    d.innerHTML = `<div class="thumb">${img ? `<img class="thumb" id="t${i}">` : "PDF"}</div><div>
-      <b>${esc(f.name)}</b>
-      ${img ? `<div class="seg" data-m>${[["orig", "Original"], ["auto", "AI Enhance"], ["scan", "Scan B&W"]].map(([k, t]) => `<button data-k="${k}" class="${f.mode === k ? "on" : ""}">${t}</button>`).join("")}</div>
-      <button class="ghost" data-crop>✂ Crop</button>` : `<p class="mut">PDF jaisa hai waisa print hoga</p>`}
-      <div class="row" style="margin-top:8px"><label>Copies<input type="number" min="1" max="99" value="${f.copies}" data-c></label>
-      <label>Print<select data-col><option value="0">Black & White</option><option value="1" ${f.color ? "selected" : ""}>Colour</option></select></label></div>
-      <button class="ghost" data-del>Hatao</button></div>`;
-    L.append(d);
-    if (img) enhance(f.blob, f.mode).then(b => { const t = $("#t" + i); if (t) t.src = URL.createObjectURL(b); });
-    d.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { f.mode = b.dataset.k; draw(); });
-    d.querySelector("[data-crop]")?.addEventListener("click", async () => { const r = await cropDialog(f.blob); if (r) { f.blob = r; f.type = "image/jpeg"; draw(); } });
-    d.querySelector("[data-c]").onchange = e => f.copies = Math.max(1, +e.target.value || 1);
-    d.querySelector("[data-col]").onchange = e => f.color = e.target.value === "1";
-    d.querySelector("[data-del]").onclick = () => { files.splice(i, 1); draw(); };
-  });
-}
-
-/* ---------- Owner dashboard ---------- */
-async function admin() {
-  let shop;
-  if (LIVE) {
-    const { data } = await sb.auth.getSession();
-    if (!data.session) return login();
-    shop = data.session.user.id;
-  } else {
-    shop = localStorage.qsp_id || (localStorage.qsp_id = "qp" + uid().replace(/-/g, "").slice(0, 16));
-    if (!owner) { banner("Connect ho raha hai…"); startOwner(shop); }
-  }
-  const link = location.origin + location.pathname + "?shop=" + shop;
-  app.innerHTML = `<h1>Shop Dashboard</h1>
-  <div class="card row"><div><h2>Aapka QR</h2><div id="qr"></div></div>
-  <div><p class="mut">Ye QR dukaan me chipka do. Link:</p>${location.protocol === "file:" ? '<p class="mut" style="color:#c00">⚠ Ye page abhi apne laptop se khula hai. QR phone me tabhi chalega jab ye file GitHub par daalke uska https link kholo.</p>' : ""}<input readonly value="${link}" onclick="this.select()">
-  <button class="ghost" onclick="downloadQR()">QR download</button> ${LIVE ? `<button class="ghost" id="out">Logout</button>` : ""}</div></div>
-  <h2>Aaye hue documents</h2><div id="jobs"></div>`;
-  new QRCode($("#qr"), { text: link, width: 160, height: 160 });
-  if (LIVE) $("#out").onclick = async () => { await sb.auth.signOut(); admin(); };
-  const render = async () => {
-    const jobs = await api.list(shop), box = $("#jobs");
-    box.innerHTML = jobs.length ? "" : `<div class="card mut">Abhi koi document nahi aaya. QR scan karke test karo.</div>`;
-    for (const j of jobs) {
-      const d = document.createElement("div"); d.className = "card";
-      d.innerHTML = `<div class="row"><div style="flex:3"><b>${esc(j.name)}</b><br><span class="mut">${j.copies} copy · ${j.color ? "Colour" : "B&W"} · ${new Date(j.created_at).toLocaleTimeString()}</span></div>
-      <span class="tag ${j.status}" style="flex:0">${{ pending: "Approval baaki", approved: "Approved", printed: "Print ho gaya" }[j.status] || j.status}</span></div>
-      <div class="row" style="margin-top:10px">
-      ${j.status === "pending" ? `<button class="ghost" data-v>Dekho</button><button class="ok" data-a>Approve + Print</button><button class="ghost" data-r>Reject</button>` : ""}
-      ${j.status === "approved" ? `<button class="acc" data-p>Print karo</button>` : ""}</div>`;
-      box.append(d);
-      d.querySelector("[data-v]")?.addEventListener("click", async () => window.open(URL.createObjectURL(await api.blobOf(j))));
-      d.querySelector("[data-a]")?.addEventListener("click", async () => { await api.setStatus(j, "approved"); printJob(j, render); });
-      d.querySelector("[data-p]")?.addEventListener("click", () => printJob(j, render));
-      d.querySelector("[data-r]")?.addEventListener("click", async () => { if (j.path && LIVE) await sb.storage.from("docs").remove([j.path]); await api.setStatus(j, "rejected"); render(); });
+    const list = [...e.target.files]; e.target.value = "";
+    for (const f of list) {
+      if (f.size > 40e6) { toast(f.name + " is too large"); continue; }
+      try { files.push(await makeItem(f)); render(); } catch (err) { toast(err.message || "Could not add " + f.name); }
     }
   };
-  render(); api.watch(shop, render);
+  $("#send").onclick = sendAll;
 }
-async function printJob(j, done) {
-  const blob = await api.blobOf(j), url = URL.createObjectURL(blob), w = window.open("", "_blank");
-  if (blob.type === "application/pdf") { w.location = url; }
-  else {
-    const pages = Array.from({ length: j.copies }, () => `<img src="${url}">`).join("");
-    w.document.write(`<style>@page{margin:8mm}body{margin:0}img{display:block;width:100%;max-height:277mm;object-fit:contain;page-break-after:always}</style>${pages}`);
-    w.document.close(); await Promise.all([...w.document.images].map(i => i.decode().catch(() => 0)));
-    w.focus(); w.print();
-  }
-  if (confirm("Print ho gaya? 'OK' dabate hi file server se delete ho jayegi.")) { await api.wipe(j); w.close?.(); }
-  done();
+async function makeItem(f) {
+  const pdf = f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+  const it = { name: f.name, pdf, copies: 1, color: false, mode: "orig", prev: {} };
+  if (pdf) { if (f.size > 14.5e6) throw new Error("PDF is over 15 MB. Please send a smaller file."); it.blob = f; return it; }
+  try { await setBlob(it, f); } catch { throw new Error("This photo format isn't supported on this phone. Please pick a JPG/PNG or take a screenshot."); }
+  return it;
 }
-function downloadQR() { const c = $("#qr canvas"), a = document.createElement("a"); a.href = c.toDataURL(); a.download = "shop-qr.png"; a.click(); }
-function login() {
-  app.innerHTML = `<h1>Shop Owner Login</h1><div class="card"><label>Email<input id="em" type="email"></label><label>Password (6+ akshar)<input id="pw" type="password"></label>
-  <div class="row"><button id="li">Login</button><button class="ghost" id="su">Naya shop banao</button></div><p class="mut" id="msg"></p></div>`;
-  const go = fn => async () => { const { error } = await fn({ email: $("#em").value, password: $("#pw").value }); error ? $("#msg").textContent = error.message : admin(); };
-  $("#li").onclick = go(x => sb.auth.signInWithPassword(x)); $("#su").onclick = go(x => sb.auth.signUp(x));
+async function setBlob(it, src) {
+  const url = URL.createObjectURL(src), img = await loadImg(url), c = toCanvas(img, 1800);
+  URL.revokeObjectURL(url); it.blob = await toBlob(c, .9); it.small = toCanvas(c, 360); it.prev = {};
+}
+function preview(it) {
+  if (it.prev[it.mode]) return it.prev[it.mode];
+  const c = document.createElement("canvas"); c.width = it.small.width; c.height = it.small.height; c.getContext("2d").drawImage(it.small, 0, 0);
+  return it.prev[it.mode] = enhanceCanvas(c, it.mode).toDataURL("image/jpeg", .75);
+}
+function render() {
+  $("#listcard").hidden = $("#whocard").hidden = $("#bar").hidden = !files.length;
+  $("#list").innerHTML = files.map((f, i) => `<div class="file" data-i="${i}">
+    ${f.pdf ? '<div class="thumb">PDF</div>' : `<img class="thumb" alt="" src="${preview(f)}">`}
+    <div><div class="fname">${esc(f.name)}</div>
+    ${f.pdf ? '<div class="mut">Printed as it is</div>' : `<div class="seg">${[["orig", "Original"], ["auto", "Enhance"], ["scan", "Scan B&amp;W"]].map(([k, t]) => `<button data-k="${k}" class="${f.mode === k ? "on" : ""}">${t}</button>`).join("")}</div>
+    <button class="btn ghost sm" data-crop style="margin-top:6px">Crop</button>`}
+    <div><span class="step"><button data-m="-1" aria-label="Fewer copies">−</button><b>${f.copies}</b><button data-m="1" aria-label="More copies">+</button></span> <span class="mut">copies</span>
+    <span class="seg"><button data-col="0" class="${f.color ? "" : "on"}">B&amp;W</button><button data-col="1" class="${f.color ? "on" : ""}">Colour</button></span></div>
+    <button class="btn bad sm" data-del>Remove</button></div></div>`).join("");
+}
+document.addEventListener("click", async e => {
+  const row = e.target.closest(".file"); if (!row) return; const f = files[+row.dataset.i], b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.k) f.mode = b.dataset.k;
+  else if (b.dataset.m) f.copies = Math.max(1, Math.min(99, f.copies + +b.dataset.m));
+  else if (b.dataset.col) f.color = b.dataset.col === "1";
+  else if (b.hasAttribute("data-del")) files.splice(+row.dataset.i, 1);
+  else if (b.hasAttribute("data-crop")) { const r = await cropDialog(f.blob); if (r) await setBlob(f, r); }
+  render();
+});
+async function cropDialog(blob) {
+  if (!window.Cropper) { try { await lazy("https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js", "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css"); } catch { toast("Could not load the crop tool. Check your internet."); return null; } }
+  return new Promise(res => {
+    const m = $("#modal"), im = $("#cropimg"); im.src = URL.createObjectURL(blob); m.hidden = false;
+    const cr = new Cropper(im, { viewMode: 1, autoCropArea: .95, background: false });
+    const done = v => { cr.destroy(); m.hidden = true; res(v); };
+    $("#cx").onclick = () => done(null);
+    $("#cok").onclick = () => cr.getCroppedCanvas({ maxWidth: 2000, maxHeight: 2000 }).toBlob(b => done(b), "image/jpeg", .92);
+  });
+}
+function put(blob, name, meta, onp) {
+  return new Promise((ok, no) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", `${NTFY}/${topic}?f=${encodeURIComponent(name)}&m=${encodeURIComponent(JSON.stringify(meta))}`);
+    x.setRequestHeader("Content-Type", blob.type || "application/octet-stream");
+    x.upload.onprogress = e => e.lengthComputable && onp(e.loaded / e.total);
+    x.onload = () => x.status < 300 ? ok() : no(new Error(x.status === 413 ? "File is too large (max 15 MB)" : x.status === 429 ? "Too many uploads, wait a minute and retry" : "Upload failed (" + x.status + ")"));
+    x.onerror = () => no(new Error("No internet connection")); x.send(blob);
+  });
+}
+async function sendAll() {
+  const btn = $("#send"), t = $("#sendt"), p = $("#prog"), who = $("#who").value.trim() || "Customer"; btn.disabled = true;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]; t.textContent = `Sending ${i + 1} of ${files.length}…`;
+      let out = f.blob, name = f.name.replace(/[^\w.\-]+/g, "_");
+      if (!f.pdf) { const img = await loadImg(URL.createObjectURL(f.blob)); out = await toBlob(enhanceCanvas(toCanvas(img, 1800), f.mode)); name = name.replace(/\.[^.]*$/, "") + ".jpg"; }
+      await put(out, name, { n: who, c: f.copies, k: f.color }, v => p.style.width = ((i + v) / files.length * 100) + "%");
+    }
+    const n = files.length; files.length = 0;
+    app.innerHTML = `<main><div class="card done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m8 12.5 3 3 5-6"/></svg><h2>${n} file${n > 1 ? "s" : ""} sent</h2><p class="mut">Tell the shop your name. They will approve and print it.</p><button class="btn" onclick="location.reload()">Send more</button></div></main>`;
+  } catch (e) { toast(e.message); btn.disabled = false; t.textContent = "Try again"; p.style.width = 0; }
 }
 
-/* ---------- Router ---------- */
-const shop = new URLSearchParams(location.search).get("shop");
-if (location.hash === "#admin" || location.hash === "#/admin") admin();
-else if (shop) customer(shop);
-else app.innerHTML = `<h1>QR Print</h1><div class="card"><p>Shop owner ho? Dashboard kholo:</p><a class="btn" href="#admin" onclick="setTimeout(()=>location.reload())">Owner Dashboard</a></div>
-  <p class="mut">Customer ko ye page nahi dikhega — wo shop ke QR se seedha upload page par jayega.</p>`;
+/* ================= SHOP OWNER ================= */
+const jobs = new Map(), state = JSON.parse(localStorage.qsp_state || "{}");
+const save = () => localStorage.qsp_state = JSON.stringify(state);
+function adminView() {
+  const id = localStorage.qsp_topic || (localStorage.qsp_topic = "qp" + rand(22));
+  let shop = localStorage.qsp_shop || "My Print Shop";
+  const linkOf = () => `${location.origin}${location.pathname}?s=${id}&n=${encodeURIComponent(shop)}`;
+  app.innerHTML = `<div class="top"><div class="brand">${ICON} QR Print</div><div class="st" id="st"><i></i><span>Connecting…</span></div></div>
+  <main><section class="card"><div class="qrrow"><div id="qr" class="qrbox"></div><div class="qinfo"><h2>Your shop QR</h2>
+  <p class="mut">Print it and stick it at your counter. Customers scan it to send you files.</p>
+  <label class="mut">Shop name<input id="sn" type="text" value="${esc(shop)}"></label><input id="lk" readonly>
+  <div class="row"><button class="btn ghost sm" id="cp">Copy link</button><button class="btn ghost sm" id="dl">Download QR</button></div></div></div>
+  ${location.protocol === "file:" ? '<p class="mut" style="color:var(--bad)">This page is opened from your computer. The QR will only work on phones after you upload this file to GitHub Pages and open that https link.</p>' : ""}</section>
+  <div class="head"><h2>Incoming files</h2><span class="mut" id="cnt"></span></div><div id="jobs"></div>
+  <p class="note">Keep this page open while you work. Files are held on the relay server for 3 hours, so you can refresh without losing them.</p></main>`;
+  const qr = async () => {
+    $("#lk").value = linkOf(); if (!window.QRCode) await lazy("https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js");
+    $("#qr").innerHTML = ""; new QRCode($("#qr"), { text: linkOf(), width: 170, height: 170 });
+  };
+  qr();
+  $("#sn").onchange = e => { shop = e.target.value.trim() || "My Print Shop"; localStorage.qsp_shop = shop; qr(); };
+  $("#cp").onclick = () => navigator.clipboard.writeText(linkOf()).then(() => toast("Link copied"));
+  $("#dl").onclick = () => { const c = $("#qr canvas"), a = document.createElement("a"); a.href = c.toDataURL(); a.download = "shop-qr.png"; a.click(); };
+  $("#jobs").onclick = async e => {
+    const b = e.target.closest("button"), j = jobs.get(b?.closest(".job")?.dataset.id); if (!b || !j) return;
+    if (b.dataset.a === "view") { const w = window.open("", "_blank"); w.location = URL.createObjectURL(await getBlob(j)); }
+    if (b.dataset.a === "print") { setState(j, "approved"); printJob(j); }
+    if (b.dataset.a === "done") setState(j, "printed");
+    if (b.dataset.a === "reject") setState(j, "rejected");
+  };
+  listen(id); setInterval(list, 30000);
+}
+function setState(j, s) { j.status = state[j.id] = s; save(); list(); }
+async function getBlob(j) {
+  if (!j.blob) { const r = await fetch(j.url); if (!r.ok) throw new Error("File expired"); j.blob = await r.blob(); }
+  return j.blob;
+}
+function listen(id) {
+  const st = on => { $("#st").className = "st" + (on ? " on" : ""); $("#st span").textContent = on ? "Online" : "Reconnecting…"; };
+  const es = new EventSource(`${NTFY}/${id}/sse?since=3h`);
+  es.onopen = () => st(true); es.onerror = () => st(false);
+  es.onmessage = async ev => {
+    const e = JSON.parse(ev.data); if (e.event !== "message" || !e.attachment || jobs.has(e.id)) return;
+    let m = {}; try { m = JSON.parse(e.message); } catch { }
+    const j = { id: e.id, t: e.time * 1000, who: m.n || "Customer", file: e.attachment.name, type: e.attachment.type || "", copies: m.c || 1, color: !!m.k, url: e.attachment.url, status: state[e.id] || "pending" };
+    jobs.set(e.id, j); if (j.status === "pending") toast("New file from " + j.who); list();
+    try { await getBlob(j); list(); } catch { }
+  };
+}
+function list() {
+  const box = $("#jobs"); if (!box) return;
+  const all = [...jobs.values()].filter(j => j.status !== "rejected").sort((a, b) => b.t - a.t);
+  const pend = all.filter(j => j.status === "pending").length;
+  $("#cnt").textContent = pend ? pend + " waiting" : ""; document.title = (pend ? `(${pend}) ` : "") + "QR Print";
+  box.innerHTML = all.length ? all.map(j => {
+    const img = j.blob && (j.blob.type || j.type).startsWith("image/"); j.u = j.u || (img ? URL.createObjectURL(j.blob) : "");
+    return `<div class="card job ${j.status}" data-id="${j.id}">${j.u ? `<img class="thumb" alt="" src="${j.u}">` : `<div class="thumb">${j.blob ? "PDF" : "…"}</div>`}
+    <div><b>${esc(j.who)}</b> <span class="chip ${j.status}">${{ pending: "Waiting for approval", approved: "Approved", printed: "Printed" }[j.status]}</span>
+    <div class="mut">${esc(j.file)} · ${j.copies} ${j.copies > 1 ? "copies" : "copy"} · ${j.color ? "Colour" : "B&W"} · ${new Date(j.t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+    <div class="row" style="margin-top:10px">
+    ${j.status === "pending" ? '<button class="btn ghost sm" data-a="view">View</button><button class="btn ok sm" data-a="print">Approve &amp; print</button><button class="btn bad sm" data-a="reject">Reject</button>' : ""}
+    ${j.status === "approved" ? '<button class="btn sm" data-a="print">Print again</button><button class="btn ok sm" data-a="done">Mark as printed</button>' : ""}</div></div></div>`;
+  }).join("") : '<div class="card empty">No files yet. Scan your own QR with a phone to test.</div>';
+}
+async function printJob(j) {
+  const w = window.open("", "_blank"); if (!w) return toast("Allow pop-ups to print");
+  try {
+    const b = await getBlob(j), url = URL.createObjectURL(b);
+    if ((b.type || j.type) === "application/pdf") { w.location = url; return; }
+    w.document.write(`<title>Print</title><style>@page{margin:8mm}body{margin:0}img{display:block;width:100%;max-height:277mm;object-fit:contain;page-break-after:always}</style>` + Array.from({ length: j.copies }, () => `<img src="${url}">`).join(""));
+    w.document.close(); await Promise.all([...w.document.images].map(i => i.decode().catch(() => 0))); w.focus(); w.print();
+  } catch (e) { w.close(); toast(e.message || "Could not print"); }
+}
+
+topic ? customerView() : adminView();
 </script>
 </body>
 </html>
